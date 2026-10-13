@@ -1,0 +1,84 @@
+{
+ "schema": "swos-amiga-definition-v1",
+ "database": {
+  "kind": "edited",
+  "generation": 1,
+  "crc32": "5F75AF19",
+  "label": "SEASON 26/27"
+ },
+ "custom_set_crc32": null,
+ "family": "cup",
+ "name": "CLUB CUP",
+ "pitch": {
+  "mode": 1,
+  "type": -1
+ },
+ "season": {
+  "start": 56,
+  "end": 32
+ },
+ "substitutes": {
+  "usable": 3,
+  "bench": 5
+ },
+ "teams": 4,
+ "cup": {
+  "rounds": 2,
+  "away_goals": 0,
+  "legs": [
+   1,
+   1,
+   1,
+   1,
+   1,
+   1
+  ],
+  "extra_time": [
+   1,
+   1,
+   1,
+   1,
+   1,
+   1
+  ],
+  "penalties": [
+   1,
+   1,
+   1,
+   1,
+   1,
+   1
+  ]
+ },
+ "participants": [
+  {
+   "group": 8,
+   "ordinal": 0,
+   "source": "database",
+   "control": "computer",
+   "name": "NORTH CITY"
+  },
+  {
+   "group": 8,
+   "ordinal": 1,
+   "source": "database",
+   "control": "computer",
+   "name": "SOUTH UNITED"
+  },
+  {
+   "group": 8,
+   "ordinal": 8,
+   "source": "database",
+   "control": "computer",
+   "name": "EAST ROVERS"
+  },
+  {
+   "group": 8,
+   "ordinal": 12,
+   "source": "database",
+   "control": "computer",
+   "name": "WEST ATHLETIC"
+  }
+ ],
+ "tactics": {}
+}

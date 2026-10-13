@@ -1,0 +1,108 @@
+{
+ "format": "SWOSPACK",
+ "version": 2,
+ "label": "SEASON 26/27",
+ "base": "043fa8846a7a2337b3c02fe0d4c17c21a7eef448fe80bd636482ca4fc017893b",
+ "teams": [
+  {
+   "group": 8,
+   "ordinal": 0,
+   "fields": {
+    "name": "NORTH CITY",
+    "coach": "ALEX EXAMPLE"
+   },
+   "players": [
+    {
+     "slot": 8,
+     "fields": {
+      "name": "JOHN NORTH",
+      "skills": [
+       4,
+       6,
+       3,
+       2,
+       5,
+       6,
+       7
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "group": 8,
+   "ordinal": 1,
+   "fields": {
+    "name": "SOUTH UNITED",
+    "coach": "ROBIN SAMPLE"
+   },
+   "players": [
+    {
+     "slot": 8,
+     "fields": {
+      "name": "SAM SOUTH",
+      "skills": [
+       5,
+       4,
+       4,
+       3,
+       5,
+       5,
+       6
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "group": 8,
+   "ordinal": 8,
+   "fields": {
+    "name": "EAST ROVERS",
+    "coach": "CHRIS DEMO"
+   },
+   "players": [
+    {
+     "slot": 8,
+     "fields": {
+      "name": "TOM EAST",
+      "skills": [
+       3,
+       5,
+       6,
+       2,
+       4,
+       7,
+       6
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "group": 8,
+   "ordinal": 12,
+   "fields": {
+    "name": "WEST ATHLETIC",
+    "coach": "PAT MODEL"
+   },
+   "players": [
+    {
+     "slot": 8,
+     "fields": {
+      "name": "BEN WEST",
+      "skills": [
+       6,
+       3,
+       2,
+       4,
+       6,
+       5,
+       5
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

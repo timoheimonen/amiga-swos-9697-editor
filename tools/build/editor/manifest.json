@@ -1,0 +1,570 @@
+{
+  "description": "Patch manifest of the editor's runtime hooks: runtime addresses with SWOS2 at $180000, the length and the SHA-256 of the expected original bytes, and the replacement.",
+  "patches": [
+    {
+      "name": "match_end_friendly_test",
+      "table": "runtime",
+      "address": "0x18EB78",
+      "length": 6,
+      "expected_sha256": "9695b1d2f87b3df3bfe23e8c1d7579d408fd200314f5c006a916cf8756c2013b",
+      "replacement": {
+        "jsr": "matchlog_match_end",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "forfeit_score_site",
+      "table": "runtime",
+      "address": "0x18F6FE",
+      "length": 8,
+      "expected_sha256": "0281fa9f5a79fe861a4a3a4a13e7bff3b6c08515bfa0261e785a974b3534d86e",
+      "replacement": {
+        "template": "matchlog_forfeit_patch",
+        "image": "editor",
+        "fixups": [
+          2
+        ]
+      }
+    },
+    {
+      "name": "main_template_operand",
+      "table": "runtime",
+      "address": "0x1A0432",
+      "length": 4,
+      "expected_sha256": "f3f289a98b0a9568aa8c758ccbc53471f3a0d005e2680997d517a0a653a87e5a",
+      "replacement": {
+        "pointer": "WORK_MAIN_MENU",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "family_reset_tactic_call",
+      "table": "runtime",
+      "address": "0x1A7B0C",
+      "length": 6,
+      "expected_sha256": "a3582242cab1189b36fbdbd1bf2b46d5f79b0d2d0e2130182158fedc89721fd2",
+      "replacement": {
+        "jmp": "tactics_family_reset",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "match_wrapper_return",
+      "table": "runtime",
+      "address": "0x1A88BC",
+      "length": 6,
+      "expected_sha256": "d7f00b607dadde1721d4fe84f4af842f6225f773c43f67565d6cae8a3fe74d94",
+      "replacement": {
+        "jmp": "matchlog_after",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "team_selection_add_entry",
+      "table": "runtime",
+      "address": "0x1B1140",
+      "length": 6,
+      "expected_sha256": "cca3aeab072c43180707430a8b5e85e6376b12b123eccb01e7bf826f7bbab224",
+      "replacement": {
+        "jsr": "definition_selection_note",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "diy_league_operand",
+      "table": "runtime",
+      "address": "0x1B1C82",
+      "length": 4,
+      "expected_sha256": "e4160a596de4ccdc3aa27654e5195339b8faa3cc0cea009c713c0ec980fb8dbc",
+      "replacement": {
+        "pointer": "WORK_DIY_LEAGUE",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "diy_league_chooser_call",
+      "table": "runtime",
+      "address": "0x1B2240",
+      "length": 6,
+      "expected_sha256": "6e133e15d5e98eae77f199fa95edac5d69106a4d8f0668436ef49ef44fcfca72",
+      "replacement": {
+        "jsr": "definition_chooser",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "diy_cup_operand",
+      "table": "runtime",
+      "address": "0x1B3344",
+      "length": 4,
+      "expected_sha256": "8bd56a05c59b08d0a7ebc2e97cb991507bbc5e9dae0647865bbb231af75f8aef",
+      "replacement": {
+        "pointer": "WORK_DIY_CUP",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "diy_cup_chooser_call",
+      "table": "runtime",
+      "address": "0x1B3CB2",
+      "length": 6,
+      "expected_sha256": "6e133e15d5e98eae77f199fa95edac5d69106a4d8f0668436ef49ef44fcfca72",
+      "replacement": {
+        "jsr": "definition_chooser",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "diy_tournament_operand",
+      "table": "runtime",
+      "address": "0x1B5416",
+      "length": 4,
+      "expected_sha256": "63e17cc82009f2c127cc4c1922ca5e1a9ef5d2cb762df93d3e0e8bfae9db216c",
+      "replacement": {
+        "pointer": "WORK_DIY_TOURNAMENT",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "diy_tournament_chooser_call",
+      "table": "runtime",
+      "address": "0x1B6252",
+      "length": 6,
+      "expected_sha256": "6e133e15d5e98eae77f199fa95edac5d69106a4d8f0668436ef49ef44fcfca72",
+      "replacement": {
+        "jsr": "definition_chooser",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "custom_team_gate_call",
+      "table": "runtime",
+      "address": "0x1B72E2",
+      "length": 6,
+      "expected_sha256": "f0c301e4f5b163ab5656fa82e1a754bab727d47511a18d34a5a2ae0ae3e12150",
+      "replacement": {
+        "jsr": "boundary_gate",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "custom_save_prompt_call",
+      "table": "runtime",
+      "address": "0x1B7336",
+      "length": 6,
+      "expected_sha256": "dd4d01f43e4dfc49b5fae206177afa48b8887dc5f8972380c7c332d906d691ea",
+      "replacement": {
+        "jsr": "customs_save_prompt",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "custom_save_request_call",
+      "table": "runtime",
+      "address": "0x1B7346",
+      "length": 6,
+      "expected_sha256": "9e26153d8952fc79b914c989c929789dabfde319b60c4bc8502b9b026ef30ced",
+      "replacement": {
+        "jsr": "storage_volume_ready",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "custom_save_write_call",
+      "table": "runtime",
+      "address": "0x1B7366",
+      "length": 6,
+      "expected_sha256": "7221d9187ebc754d6ce4a9664296fd16ac93775d6d9a8962d863dd17adad2ff3",
+      "replacement": {
+        "jsr": "customs_save",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "team_editor_operand",
+      "table": "runtime",
+      "address": "0x1B7394",
+      "length": 4,
+      "expected_sha256": "d225255655cf6ba4ff44e48f8603213498cd4fe51a2aa0a3900375b6f0eecc00",
+      "replacement": {
+        "pointer": "WORK_TEAM_EDITOR",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "career_hub_save_request_call",
+      "table": "runtime",
+      "address": "0x1BAF60",
+      "length": 6,
+      "expected_sha256": "9e26153d8952fc79b914c989c929789dabfde319b60c4bc8502b9b026ef30ced",
+      "replacement": {
+        "jsr": "storage_volume_ready",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "career_hub_save_call",
+      "table": "runtime",
+      "address": "0x1BAF8E",
+      "length": 6,
+      "expected_sha256": "c09f4a0b2f0062da2c32e0e65205bcd4332d50b39e279f0ee38ecc7f7712a271",
+      "replacement": {
+        "jsr": "db_save_career",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "custom_load_request_call",
+      "table": "runtime",
+      "address": "0x1BDF4A",
+      "length": 6,
+      "expected_sha256": "9e26153d8952fc79b914c989c929789dabfde319b60c4bc8502b9b026ef30ced",
+      "replacement": {
+        "jsr": "storage_volume_ready",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "format_prompt_call",
+      "table": "runtime",
+      "address": "0x1C07FE",
+      "length": 6,
+      "expected_sha256": "dd4d01f43e4dfc49b5fae206177afa48b8887dc5f8972380c7c332d906d691ea",
+      "replacement": {
+        "jsr": "boundary_format_note",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "delete_file_request_call",
+      "table": "runtime",
+      "address": "0x1C087A",
+      "length": 6,
+      "expected_sha256": "9e26153d8952fc79b914c989c929789dabfde319b60c4bc8502b9b026ef30ced",
+      "replacement": {
+        "jsr": "storage_volume_ready",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "delete_file_call",
+      "table": "runtime",
+      "address": "0x1C0894",
+      "length": 6,
+      "expected_sha256": "8de31ac575be63853d07f9c66b11951cdad4b993bc953c1045587452cb145d8b",
+      "replacement": {
+        "jsr": "db_delete_file",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "diy_type_operand",
+      "table": "runtime",
+      "address": "0x1C0D8A",
+      "length": 4,
+      "expected_sha256": "8a4646110d3256f23c61802735a1df67b3a78a4d1c12e7161b6316a3f482689e",
+      "replacement": {
+        "pointer": "WORK_DIY_TYPE",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "save_competition_request_call",
+      "table": "runtime",
+      "address": "0x1C1230",
+      "length": 6,
+      "expected_sha256": "9e26153d8952fc79b914c989c929789dabfde319b60c4bc8502b9b026ef30ced",
+      "replacement": {
+        "jsr": "storage_volume_ready",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "save_diy_call",
+      "table": "runtime",
+      "address": "0x1C127C",
+      "length": 6,
+      "expected_sha256": "3b02732b0b4ccc92a5985c71426d1f3c1cd8a6208f33cbe7ef61495e663ac291",
+      "replacement": {
+        "jsr": "db_save_diy",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "save_preset_call",
+      "table": "runtime",
+      "address": "0x1C12C4",
+      "length": 6,
+      "expected_sha256": "eefe23aeca7eb5cb0381918ac11433c0e0e2ee62924c68709b87c7e51d4291ba",
+      "replacement": {
+        "jsr": "db_save_preset",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "save_season_call",
+      "table": "runtime",
+      "address": "0x1C130E",
+      "length": 6,
+      "expected_sha256": "4dd743f1ba8649ef3b2ae32945b4756ce5d8d87789a17b967587d1a8b6eaa6e9",
+      "replacement": {
+        "jsr": "db_save_season",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "save_career_call",
+      "table": "runtime",
+      "address": "0x1C1356",
+      "length": 6,
+      "expected_sha256": "c09f4a0b2f0062da2c32e0e65205bcd4332d50b39e279f0ee38ecc7f7712a271",
+      "replacement": {
+        "jsr": "db_save_career",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "load_competition_request_call",
+      "table": "runtime",
+      "address": "0x1C13A2",
+      "length": 6,
+      "expected_sha256": "9e26153d8952fc79b914c989c929789dabfde319b60c4bc8502b9b026ef30ced",
+      "replacement": {
+        "jsr": "storage_volume_ready",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "load_diy_call",
+      "table": "runtime",
+      "address": "0x1C13F2",
+      "length": 6,
+      "expected_sha256": "a1eaad11214b7f7fbdac4fe04cf4c33fc876e7a970b08cdc3791acb7634117a2",
+      "replacement": {
+        "jsr": "db_load_diy",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "load_preset_call",
+      "table": "runtime",
+      "address": "0x1C141A",
+      "length": 6,
+      "expected_sha256": "4edb1520f25e410f4d14a7d1c9ae79a40a66300a9752f07ac1847b4ee053e037",
+      "replacement": {
+        "jsr": "db_load_preset",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "load_season_call",
+      "table": "runtime",
+      "address": "0x1C143C",
+      "length": 6,
+      "expected_sha256": "383d3b2e88bab87c448f81e3de9f5f4f39a6356820b24f30cf2054b305a60293",
+      "replacement": {
+        "jsr": "db_load_season",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "load_career_call",
+      "table": "runtime",
+      "address": "0x1C145E",
+      "length": 6,
+      "expected_sha256": "f698417bff577d18df34f35cba20e2386459321cf208edbc34a91fd2a35559a7",
+      "replacement": {
+        "jsr": "db_load_career",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "transfer_pool_read_call",
+      "table": "runtime",
+      "address": "0x1C2A52",
+      "length": 6,
+      "expected_sha256": "708dac0439c0993b80e22c2520ef83435d007c00c7448ab282ba350097e27b1d",
+      "replacement": {
+        "jsr": "pool_read",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "foreign_market_operand",
+      "table": "runtime",
+      "address": "0x1C53EE",
+      "length": 4,
+      "expected_sha256": "ae241bc4b226a8dde659554f42e4e9b040ad8f4026316753ed24cd22c7f009be",
+      "replacement": {
+        "pointer": "boundary_foreign_market",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "tactic_save_exit_operand",
+      "table": "runtime",
+      "address": "0x1CB8B2",
+      "length": 4,
+      "expected_sha256": "56316df3979fa8b4362506e94fc08af99c592120b509bf5ac4b7c9fcd76fad9d",
+      "replacement": {
+        "pointer": "tactics_save_exit",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "tactic_save_request_call",
+      "table": "runtime",
+      "address": "0x1CBE86",
+      "length": 6,
+      "expected_sha256": "9e26153d8952fc79b914c989c929789dabfde319b60c4bc8502b9b026ef30ced",
+      "replacement": {
+        "jsr": "storage_volume_ready",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "tactic_save_call",
+      "table": "runtime",
+      "address": "0x1CBEF2",
+      "length": 6,
+      "expected_sha256": "c846771cb8d836cf6e76ece98d047ccbef4b712812018f290b8ac88c5c233cb2",
+      "replacement": {
+        "jsr": "tactics_save_file",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "tactic_import_count",
+      "table": "runtime",
+      "address": "0x1CBF84",
+      "length": 4,
+      "expected_sha256": "1557a2178648e6fd91e9e8d280eda3b53c8aeea61c07386aeb5520952cffc215",
+      "replacement": {
+        "template": "tactic_import_count_patch",
+        "image": "editor",
+        "fixups": []
+      }
+    },
+    {
+      "name": "tactic_load_request_call",
+      "table": "runtime",
+      "address": "0x1CD540",
+      "length": 6,
+      "expected_sha256": "9e26153d8952fc79b914c989c929789dabfde319b60c4bc8502b9b026ef30ced",
+      "replacement": {
+        "jsr": "storage_volume_ready",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "tactic_load_call",
+      "table": "runtime",
+      "address": "0x1CD574",
+      "length": 6,
+      "expected_sha256": "b3fe80ef4e10534ae303d54ea2dbb87a97b1833de58087c57439ea2677237e8c",
+      "replacement": {
+        "jsr": "tactics_load_file",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "load_highlights_request_call",
+      "table": "runtime",
+      "address": "0x1CDEB4",
+      "length": 6,
+      "expected_sha256": "9e26153d8952fc79b914c989c929789dabfde319b60c4bc8502b9b026ef30ced",
+      "replacement": {
+        "jsr": "storage_volume_ready",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "save_highlights_request_call",
+      "table": "runtime",
+      "address": "0x1CDF3C",
+      "length": 6,
+      "expected_sha256": "9e26153d8952fc79b914c989c929789dabfde319b60c4bc8502b9b026ef30ced",
+      "replacement": {
+        "jsr": "storage_volume_ready",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "cup_copies_target",
+      "table": "runtime",
+      "address": "0x1D1428",
+      "length": 6,
+      "expected_sha256": "47f3a2d716b26c924b15fb9364e84a3883635d2388fed6b6636adf5d91dcb47d",
+      "replacement": {
+        "jsr": "boundary_cup_copies",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "cup_copies_read_call",
+      "table": "runtime",
+      "address": "0x1D143A",
+      "length": 6,
+      "expected_sha256": "708dac0439c0993b80e22c2520ef83435d007c00c7448ab282ba350097e27b1d",
+      "replacement": {
+        "jsr": "cup_copies_read",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "season_loaded_call",
+      "table": "runtime",
+      "address": "0x1D1A28",
+      "length": 6,
+      "expected_sha256": "acc99d84ac797067107482c87e3aa30eb46f427fe62df8f39eb11dda40604937",
+      "replacement": {
+        "jsr": "tactics_competition_loaded",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "preset_loaded_call",
+      "table": "runtime",
+      "address": "0x1D1AA4",
+      "length": 6,
+      "expected_sha256": "acc99d84ac797067107482c87e3aa30eb46f427fe62df8f39eb11dda40604937",
+      "replacement": {
+        "jsr": "tactics_competition_loaded",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "diy_loaded_call",
+      "table": "runtime",
+      "address": "0x1D1B1C",
+      "length": 6,
+      "expected_sha256": "acc99d84ac797067107482c87e3aa30eb46f427fe62df8f39eb11dda40604937",
+      "replacement": {
+        "jsr": "tactics_competition_loaded",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "custom_load_call",
+      "table": "runtime",
+      "address": "0x1D1C54",
+      "length": 6,
+      "expected_sha256": "708dac0439c0993b80e22c2520ef83435d007c00c7448ab282ba350097e27b1d",
+      "replacement": {
+        "jsr": "customs_load",
+        "image": "editor"
+      }
+    },
+    {
+      "name": "team_group_load_source",
+      "table": "runtime",
+      "address": "0x1D1CCA",
+      "length": 6,
+      "expected_sha256": "708dac0439c0993b80e22c2520ef83435d007c00c7448ab282ba350097e27b1d",
+      "replacement": {
+        "jsr": "team_group_gateway",
+        "image": "editor"
+      }
+    }
+  ]
+}

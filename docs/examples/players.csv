@@ -1,0 +1,5 @@
+group,ordinal,slot,team,name,passing,shooting,heading,tackling,control,speed,finishing
+8,0,8,NORTH CITY,JOHN NORTH,4,6,3,2,5,6,7
+8,1,8,SOUTH UNITED,SAM SOUTH,5,4,4,3,5,5,6
+8,8,8,EAST ROVERS,TOM EAST,3,5,6,2,4,7,6
+8,12,8,WEST ATHLETIC,BEN WEST,6,3,2,4,6,5,5

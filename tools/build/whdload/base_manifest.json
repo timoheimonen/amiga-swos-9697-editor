@@ -1,0 +1,54 @@
+{
+  "description": "Patch manifest of the slave's base patch table: runtime addresses with SWOS2 at $180000, the length and the SHA-256 of the expected original bytes, and the replacement.",
+  "patches": [
+    {
+      "name": "game_find_disk_marker",
+      "table": "base",
+      "address": "0x180438",
+      "length": 6,
+      "expected_sha256": "cfa9f1b28e790843adce8c81df8d13cb3cbd847907c469d2f0c62e2154f98eff",
+      "replacement": {
+        "jmp": "slave_find_marker",
+        "image": "slave"
+      }
+    },
+    {
+      "name": "file_format_check",
+      "table": "base",
+      "address": "0x1804AC",
+      "length": 6,
+      "expected_sha256": "05e7a9eb1dfdcd93f47f9f6e8012a4cd85856e99936680fd53ab4fb295dd4d19",
+      "replacement": {
+        "jmp": "slave_format_check",
+        "image": "slave"
+      }
+    },
+    {
+      "name": "file_driver_call",
+      "table": "base",
+      "address": "0x1805C0",
+      "length": 6,
+      "expected_sha256": "5f48f2ae21e47d1d4d02cfa1f95cb4360b5d4680afa18261afc775e190fbb820",
+      "replacement": {
+        "jmp": "slave_file_driver",
+        "image": "slave"
+      }
+    },
+    {
+      "name": "disk_io",
+      "table": "base",
+      "address": "0x180E7E",
+      "length": 70,
+      "expected_sha256": "5151ab9599e3c09c0c61b7fdf328b866e1803c764d92e0fa17e8662c4abee093",
+      "replacement": {
+        "template": "slave_block_template",
+        "image": "slave",
+        "fixups": [
+          2,
+          8,
+          22
+        ]
+      }
+    }
+  ]
+}
