@@ -89,10 +89,13 @@ The editors call the slave through the veneer in the slave block:
 | `SVC_SIZE`, `SVC_READ`, `SVC_READ_PART` | a file's length; a read that never passes the caller's capacity |
 | `SVC_WRITE` | a file written and read back in 4 KiB pieces and compared before success; new names admitted only below 512 names (and new game saves below 45) |
 | `SVC_APPEND` | bytes added at the length the caller knows (a file of another length is refused), the added bytes read back |
-| `SVC_DELETE` | a file deleted |
+| `SVC_DELETE` | a file deleted, an empty one too |
 | `SVC_TIME` | WHDLoad's date and time when the machine has a clock (read once, when WHDLoad starts) |
 
-Names have 1-29 characters with a dot. WHDLoad keeps the files it has read
+Names have 1-29 characters with a dot; the game's own list shows only its
+saves named as it names them (1-8 characters and the suffix in capitals: its
+chooser copies a chosen name into 13-byte buffers), and a native read of a
+save never passes the memory the game reads it into. WHDLoad keeps the files it has read
 in memory (the install's icon asks for `PRELOAD`), so a file changed in
 `data/` from outside while the game runs is seen after a restart; after a
 failed write to an existing file WHDLoad does not see that file again in the

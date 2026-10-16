@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.9b
+; SWOS 96-97 In-Game Editors V0.91b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -118,10 +118,16 @@ load_cup:
         bsr.l   text_copy
         bra.s   .done
 .read:
-        lea     original_text(pc),a0
-        tst.w   d1
-        beq.s   .source
         lea     set_text(pc),a0
+        tst.w   d1
+        bne.s   .source
+        lea     original_text(pc),a0    ; the game's copy: why
+        cmpi.w  #DSS_VALID,DB_SET_STATE(a4)
+        beq.s   .source
+        lea     original_none_text(pc),a0
+        cmpi.w  #DSS_DAMAGED,DB_SET_STATE(a4)
+        bne.s   .source
+        lea     original_damaged_text(pc),a0
 .source:
         bsr.l   text_copy
         move.w  d7,d0
@@ -225,6 +231,8 @@ title_eurocwc:          dc.b    'EUROPEAN CUP-WINNERS CUP',0
 title_uefacup:          dc.b    'UEFA CUP',0
 set_text:               dc.b    'THE SAVED SET',39,'S PARTICIPANTS AND SQUADS',0
 original_text:          dc.b    'AS IN 96/97: THE SAVED SET CHANGES NONE OF THEM',0
+original_none_text:     dc.b    'AS IN 96/97: THERE IS NO EDITED SET YET',0
+original_damaged_text:  dc.b    'AS IN 96/97: DBASE.CFG IS DAMAGED',0
 unreadable_text:        dc.b    'THE COPY CANNOT BE READ: FILE DAMAGED',0
 previous_label:         dc.b    '_PREVIOUS CUP',0
 next_label:             dc.b    '_NEXT CUP',0

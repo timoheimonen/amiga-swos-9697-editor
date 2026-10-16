@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.9b
+; SWOS 96-97 In-Game Editors V0.91b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -549,7 +549,10 @@ db_verify_set:
 
 ; db_read_set: reads DBASE.CFG into DB_SET and checks it. D0.l and
 ; DB_SET_STATE = DSS_NONE, DSS_VALID or DSS_DAMAGED (DB_SET_PROBLEM and
-; DB_SET_DETAIL hold the problem). Preserves D1-D7/A0-A6.
+; DB_SET_DETAIL hold the problem). An empty DBASE.CFG (a write cut by a
+; full volume) reads as missing; beside a sound DBASE.BAK it is damaged, so
+; that a SAVE does not start a new set while the previous one waits to be
+; restored. Uses DB_NEW and the listing area. Preserves D1-D7/A0-A6.
 db_read_set:
         movem.l d1/a0-a1,-(sp)
         lea     config_name(pc),a0
@@ -558,8 +561,13 @@ db_read_set:
         bsr.l   storage_read            ; D1 = length
         beq.s   .check
         cmpi.l  #STE_NOT_FOUND,d0
-        beq.s   .none
-        moveq   #MC_SIZE,d0             ; longer than any manifest, or unreadable
+        bne.s   .size
+        bsr.w   db_backup_usable        ; 0: a previous set to restore
+        bne.s   .none
+        bsr.w   config_listed           ; Z set: an empty DBASE.CFG beside it
+        bne.s   .none
+.size:
+        moveq   #MC_SIZE,d0             ; longer than any manifest, empty, or unreadable
         moveq   #0,d1
         bra.s   .damaged
 .check:
@@ -585,11 +593,13 @@ db_read_set:
 
 ; db_restore_backup: replaces a missing or damaged DBASE.CFG with DBASE.BAK
 ; when that is a sound manifest. D0.l = 0 when DBASE.CFG was written from it
-; and read back (DB_SET then holds it), 1 when DBASE.BAK is missing or
-; damaged, or a storage result. Preserves D1-D7/A0-A6.
+; and read back (DB_SET then holds it; a failed start check that named
+; DBASE.CFG no longer holds: its problem is cleared, as explained, and the
+; caption follows), 1 when DBASE.BAK is missing or damaged, or a storage
+; result. Preserves D1-D7/A0-A6.
 db_restore_backup:
         movem.l d1/a0-a1,-(sp)
-        bsr.s   db_backup_usable        ; 1: missing or damaged
+        bsr.w   db_backup_usable        ; 1: missing or damaged
         bne.s   .done
         lea     config_name(pc),a0
         lea     WORK_DB+DB_NEW(a5),a1
@@ -597,10 +607,45 @@ db_restore_backup:
         bsr.l   storage_write           ; read back by the slave
         bne.s   .done
         bsr.w   db_read_set
+        bsr.s   start_restored
         moveq   #0,d0
 .done:
         movem.l (sp)+,d1/a0-a1
         tst.l   d0
+        rts
+
+; start_restored: DBASE.CFG is sound again. A failed start check that named
+; it no longer holds: its problem is cleared (the restore explained it) and
+; the main-menu caption follows. Preserves all registers.
+start_restored:
+        movem.l d0/a0-a1,-(sp)
+        tst.w   WORK_DB+DB_START_PROBLEM(a5)
+        beq.s   .done
+        lea     WORK_DB+DB_START_NAME(a5),a0
+        lea     config_name(pc),a1
+.compare:
+        move.b  (a0)+,d0
+        cmp.b   (a1)+,d0
+        bne.s   .done                   ; another file's problem stays
+        tst.b   d0
+        bne.s   .compare
+        clr.w   WORK_DB+DB_START_PROBLEM(a5)
+        move.w  #1,WORK_DB+DB_START_NOTED(a5)
+        bsr.w   db_caption_update
+.done:
+        movem.l (sp)+,d0/a0-a1
+        rts
+
+; config_listed: Z set when the listing of the save directory holds
+; DBASE.CFG. Uses the listing area. Preserves all registers.
+config_listed:
+        movem.l d0-d2/d6/a0-a1,-(sp)
+        bsr.w   list_dir                ; D6 = names
+        bne.s   .done                   ; not known: Z clear
+        lea     config_name(pc),a0
+        bsr.w   name_listed
+.done:
+        movem.l (sp)+,d0-d2/d6/a0-a1    ; the flags stay
         rts
 
 ; db_backup_usable: D0.l = 0 when DBASE.BAK is a sound manifest (read into
@@ -1037,6 +1082,10 @@ db_save:
         lea     WORK_DB+DB_SET(a5),a1
         move.l  MF_LENGTH(a1),d1
         bsr.l   storage_write
+        sne     d1                      ; DB_BAK_FAILED: 0 or 1
+        andi.w  #1,d1
+        move.w  d1,WORK_DB+DB_BAK_FAILED(a5)
+        tst.l   d0
         beq.s   .config
         moveq   #2,d1
         bra.s   .done
@@ -1630,6 +1679,9 @@ finish_manifest:
 ; others are old versions.
 ;   out: D0.l = 0 and D1.l = old versions found (counting) or deleted;
 ;        STE_VERIFY while DBASE.CFG is damaged (its files are not known);
+;        STE_NOT_FOUND while DBASE.BAK cannot be read after a SAVE of this
+;        session failed to write it (WHDLoad no longer sees a file after a
+;        failed write to it, and its set may still be whole);
 ;        STE_DIR_FULL when the directory holds more names than the listing
 ;        area; or a storage result with D1.l = the files deleted before it.
 ; Preserves D2-D7/A0-A6.
@@ -1660,7 +1712,12 @@ db_old_versions:
         bsr.w   mark_manifest
 .backup:
         bsr.w   db_backup_usable
-        bne.s   .links
+        beq.s   .backup_set
+        moveq   #STE_NOT_FOUND,d0
+        tst.w   WORK_DB+DB_BAK_FAILED(a5)
+        bne.w   .stopped                ; DBASE.BAK unseen: its files stay
+        bra.s   .links
+.backup_set:
         lea     WORK_DB+DB_NEW(a5),a0
         bsr.w   mark_manifest
 .links:
@@ -1703,7 +1760,10 @@ db_old_versions:
         beq.s   .count
         movea.l a2,a0
         bsr.l   storage_delete
+        beq.s   .count
+        cmpi.l  #STE_NOT_FOUND,d0
         bne.s   .stopped
+        bra.s   .old_next               ; gone already
 .count:
         addq.l  #1,d5
 .old_next:
@@ -2068,6 +2128,11 @@ save_common:
         bsr.w   link_name
         lea     WORK_DB+DB_NAME(a5),a0
         bsr.l   storage_delete          ; a missing link is fine
+        beq.s   .unbound
+        cmpi.l  #STE_NOT_FOUND,d0
+        beq.s   .unbound
+        bsr.w   stale_link_note         ; an earlier save's link stays
+.unbound:
         moveq   #0,d0
         bra.s   .return
 .refused:
@@ -2075,6 +2140,30 @@ save_common:
 .return:
         movem.l (sp)+,d1-d7/a0-a6
         tst.w   d0
+        rts
+
+; stale_link_note: D0.l = the result of deleting the link DB_NAME of an
+; earlier save of the same name. The save itself is written, but LOAD
+; refuses it while that link is there: the note names the file. Preserves
+; all registers.
+stale_link_note:
+        movem.l d0-d1/a0,-(sp)
+        lea     link_kept_title(pc),a0
+        bsr.l   message_title
+        lea     WORK_DB+DB_NAME(a5),a0
+        move.l  d0,-(sp)
+        moveq   #0,d0
+        bsr.l   message_line
+        move.l  (sp)+,d0
+        moveq   #1,d1                   ; a write
+        bsr.l   message_storage_reason
+        moveq   #1,d0
+        bsr.l   message_line
+        lea     link_kept_lines(pc),a0
+        moveq   #2,d0
+        bsr.l   message_lines
+        bsr.l   message_show
+        movem.l (sp)+,d0-d1/a0
         rts
 
 ; link_admission: A2 = save name, DB_NAME = its link. D0.l = 0 when the
@@ -2367,6 +2456,10 @@ removed_lines:          dc.b    'WAS REMOVED: IT CANNOT GO ON WITHOUT ITS LINK.'
                         dc.b    'THE COMPETITION IS STILL IN MEMORY.',0
                         dc.b    0
 link_damaged_title:     dc.b    'DATABASE LINK DAMAGED',0
+link_kept_title:        dc.b    'OLD DATABASE LINK KEPT',0
+link_kept_lines:        dc.b    'IT BELONGS TO AN EARLIER SAVE OF THIS NAME:',0
+                        dc.b    'DELETE IT, OR THIS SAVE CANNOT BE LOADED.',0
+                        dc.b    0
 link_damaged_line2:     dc.b    'THE COMPETITION CANNOT BE LOADED.',0
 not_found_title:        dc.b    'DATABASE NOT FOUND',0
 not_found_line2:        dc.b    'THE EDITED DATABASE OF THIS SAVE IS NOT HERE.',0

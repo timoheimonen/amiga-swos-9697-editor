@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.9b
+; SWOS 96-97 In-Game Editors V0.91b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -294,10 +294,14 @@ question_tick:
         beq.s   restore_answer
         tst.l   d0
         bne.w   save_write
-; back_to_screen: the screen's own dialog again.
+; back_to_screen: the screen's own dialog again, with its own status line
+; (a message or question may have used DF_STATUS for a line).
 back_to_screen:
         move.w  #DFM_MAIN,DF_MODE(a4)
         move.w  #STEP_NONE,DF_STEP(a4)
+        lea     hint_text(pc),a0
+        lea     DF_STATUS(a4),a1
+        bsr.l   text_copy
         bsr.w   show_save
 tick_stay:
         moveq   #0,d0
@@ -566,10 +570,23 @@ save_write:
         moveq   #1,d0
         bsr.l   message_line
         lea     DF_FILE(a4),a0
+        tst.l   DF_PREVIOUS(a4)
+        bne.s   .file
+        tst.l   d6
+        bmi.s   .file                   ; no sound previous file: NAME.DEF failed
+        lea     DF_BACKUP(a4),a0        ; the backup failed: NAME.DEF is as it was
+        moveq   #0,d0
+        bsr.l   message_line
+        lea     line_backup_failed(pc),a0
+        moveq   #2,d0
+        bsr.l   message_line
+        bra.s   .rules
+.file:
         moveq   #0,d0
         bsr.l   message_line
         tst.l   DF_PREVIOUS(a4)
         bne.s   .offer_restore
+.rules:
         lea     line_rules_stay(pc),a0
         moveq   #3,d0
         bsr.l   message_line
@@ -791,6 +808,7 @@ tactics_lines:          dc.b    'YES SAVES THEM WITH THE DEFINITION,',0
 line_exists:            dc.b    'IS ALREADY IN THE SAVE DIRECTORY.',0
 line_replace:           dc.b    'REPLACE IT?',0
 line_rules_stay:        dc.b    'THE RULES STAY ON THE PAGE.',0
+line_backup_failed:     dc.b    'THE BACKUP FAILED: THE FILE STAYS AS IT WAS.',0
 line_restore:           dc.b    'RESTORE THE DEFINITION FROM IT NOW?',0
 text_safe_in:           dc.b    'THE PREVIOUS ONE IS SAFE IN ',0
 text_restored:          dc.b    'RESTORED FROM ',0

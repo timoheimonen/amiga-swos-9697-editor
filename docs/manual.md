@@ -155,7 +155,8 @@ the skills. The line `RATING n VALUE x` shows the rating and the price the
 game works out from it; Fire on it explains that a value cannot be set.
 
 Changing a player into a goalkeeper or back converts his skills and rating
-and asks first; changing him back restores what he had.
+and asks first; changing him back while the player screen is still open
+restores what he had (after OK the converted values are his own).
 
 **COPY PLAYER** keeps the shown player in a clipboard; **PASTE PLAYER**
 gives the shown player the clipboard's name, nationality, position,
@@ -175,10 +176,13 @@ not kept, so `CUSTOMS.BAK` still holds the last good set. If anything fails, the
 message says what happened; if the new file could not be written, the
 editor offers to restore `CUSTOMS.EDT` from the backup at once. ABORT keeps
 the changes in memory until the next team list is loaded, and the file
-stays unchanged. A `CUSTOMS.EDT` that is not a whole custom set (cut or
-changed outside the game) is not loaded: `CUSTOM TEAMS NOT LOADED` says so
-and no team of it is used; `python3 patch.py check SWOS/data/CUSTOMS.EDT
---install SWOS` names the problem.
+stays unchanged; after a save that failed while writing `CUSTOMS.EDT` the
+note says instead that the failed save may have damaged it. A `CUSTOMS.EDT`
+that is not a whole custom set (cut or changed outside the game) is not
+loaded: `CUSTOM TEAMS NOT LOADED` says so, and whether `CUSTOMS.BAK` holds
+a whole set, and no team of it is used (a definition's edited custom teams
+are then reported as `TEAM NOT FOUND`); `python3 patch.py check
+SWOS/data/CUSTOMS.EDT --install SWOS` names the problem.
 
 A started competition keeps its own copies of its teams: EDIT CUSTOM TEAMS
 says so before the game's question about leaving the competition. Edits
@@ -233,6 +237,11 @@ buttons:
   from `NAME.DEF.BAK` at once. The message after saving shows the
   definition's fingerprint (CRC-32).
 
+The game's OPTIONS > PITCH TYPE, when it is not SEASONAL, sets the pitch of
+every competition set up, also of a definition loaded: RULES shows that
+pitch and SAVE DEFINITION stores it. Set the option to SEASONAL before you
+save a definition whose own pitch should stay.
+
 ### Loading
 
 **LOAD DEFINITION** on the DIY COMPETITION page (below LEAGUE, CUP and
@@ -242,7 +251,9 @@ the setup page of its type with its rules. CHOOSE TEAMS then asks whether
 to start with the definition's teams (YES) or to choose them now (NO).
 
 - A team of the definition that the database in use does not hold is
-  reported (`TEAM NOT FOUND`); it is never replaced by another team.
+  reported (`TEAM NOT FOUND`); it is never replaced by another team. An
+  edited custom team is not found while `CUSTOMS.EDT` is missing or not a
+  whole custom set (the message says it is damaged).
 - A definition saved with another database than the one in use asks first
   (`DEFINITION MADE WITH ANOTHER DATABASE`): its teams then come from the
   database in use.
@@ -277,7 +288,16 @@ the version of the editors and their author. The buttons:
   neither the set, its backup nor a save's link file uses, after a warning:
   saves started with them elsewhere can then no longer be continued here.
   While `DBASE.CFG` is damaged nothing is removed (`FILE DAMAGED`), since
-  its files are not known.
+  its files are not known; after a SAVE that could not write `DBASE.BAK`,
+  start the game again before you remove old versions (WHDLoad does not
+  see that file again in the same session, so its files would count as
+  old).
+
+When `DBASE.CFG` is damaged or missing and `DBASE.BAK` holds a sound set
+(a save that was cut short), EDIT DATABASE offers to restore it as you
+enter. An empty `DBASE.CFG` beside such a `DBASE.BAK` counts as damaged:
+until it is restored nothing can be saved, so no new set replaces the one
+in the backup.
 - **USE EDITED DATABASE: ON/OFF**: which database new competitions use. The
   state is remembered across restarts (`DBASE.USE`); at the start a set
   remembered as on is checked file by file.
@@ -354,7 +374,13 @@ never asks for a save disk.
   most 45, the first by name) and `CUSTOMS.EDT`.
 - `data/` holds at most 512 files. A new file is refused (`TOO MANY FILES`)
   when it would hold more, and a new game save when 45 are present.
-- File names have 1-29 characters with a dot.
+- File names have 1-29 characters with a dot. The game lists a save or a
+  tactic only by a name as it gives them itself: 1-8 characters before the
+  suffix, in capitals. A file you copy into `data/` with a longer name is
+  not shown (the game's lists cannot hold it), and `patch.py import`
+  refuses one; rename it on your computer.
+- A save longer than the game's memory for it (a file of another game, say)
+  is refused with `DISK ERROR` and is not read.
 - FORMAT SAVE DISK changes nothing: the directory needs no format (a note
   says so). DELETE FILE also deletes a deleted save's link file.
 - WHDLoad keeps the files it has read in memory: a file changed in `data/`
@@ -375,15 +401,15 @@ file is ever deleted. Run them while the game is not running.
 |---|---|
 | `python3 patch.py install "Disk 1.adf" "Disk 2.adf" --output SWOS [--machine NAME] [--set FILE ...] [--label TEXT]` | A new install; with `--set`, an edited database (a season pack, CSV or group JSON files) in use from the start |
 | `python3 patch.py list SWOS [--json]` | What the save directory holds: the machine, the custom set, the edited database, tactics, definitions (with their backups), saves with their databases, the match log, other files, with every fingerprint |
-| `python3 patch.py check FILE ...` | Checks `.TAC`, `.DEF`, `CUSTOMS.EDT`, `DBASE.CFG`, link files, `MATCHES.LOG` and `MACHINE.CFG` as the game and the editors do |
+| `python3 patch.py check FILE ...` | Checks `.TAC`, `.DEF` (and `NAME.DEF.BAK`), `CUSTOMS.EDT`, `DBASE.CFG`, link files, `MATCHES.LOG` and `MACHINE.CFG` as the game and the editors do |
 | `python3 patch.py export SWOS OUT` | The custom set as JSON and CSV, the tactics and definitions as JSON, the edited database's groups as JSON, and saves, links and the manifest as JSON for reading only |
-| `python3 patch.py import SWOS FILE ... [--replace]` | JSON and CSV files of export, `.TAC` and `.DEF` files into the save directory, checked as the editors check them |
+| `python3 patch.py import SWOS FILE ... [--replace]` | JSON and CSV files of export, `.TAC` and `.DEF` files into the save directory, checked as the editors check them; a definition replaced is kept as `NAME.DEF.BAK` |
 | `python3 patch.py db export SWOS OUT` | Every database group as JSON, `players.csv`, `teams.csv` (with the strength columns) and `cups.csv` |
 | `python3 patch.py db import SWOS FILE ... [--label TEXT]` | CSV, group JSON or a season pack into a new version of the edited set |
 | `python3 patch.py db diff SWOS PACK.json [--label TEXT]` | A season pack: only the fields that differ from the original database |
 | `python3 patch.py db apply SWOS PACK.json` | A season pack into a new version of the set |
 | `python3 patch.py db check SWOS` | Checks the set as the editors do |
-| `python3 patch.py db switch SWOS on\|off` | USE EDITED DATABASE at the next start |
+| `python3 patch.py db switch SWOS on\|off` | USE EDITED DATABASE at the next start (on only for a set whose files are all there and sound) |
 | `python3 patch.py report SWOS_OR_SAVES ... --output OUT` | Standings, cup results and scorers of `.DIY`, `.PRE` and `.SEA` saves as CSV and Markdown |
 | `python3 patch.py results SWOS_OR_LOGS ... --output OUT [--def FILE] [--teams LIST]` | The match logs of several installs as one table: matches, standings and scorers |
 | `python3 patch.py machine SWOS NAME` | Renames the install's machine for the match log |

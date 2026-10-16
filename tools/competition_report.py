@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SWOS 96-97 In-Game Editors V0.9b
+# SWOS 96-97 In-Game Editors V0.91b
 # Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 # Licensed under the MIT License. See the LICENSE file for details.
 """The tables of a competition save: standings, cup results and scorers.

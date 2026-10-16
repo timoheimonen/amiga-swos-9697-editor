@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.9b
+; SWOS 96-97 In-Game Editors V0.91b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -292,6 +292,14 @@ competition_abandon_gate equ $1A7A3C
 competition_state       equ $1EE084     ; DIY and preset competition state
 competition_team_count  equ $1EE0B6     ; word: teams of a DIY or preset competition
 season_state            equ $1D7408     ; season and career state
+; LOAD OLD COMPETITION reads a save whole to the start of its region
+; (competition_state, season_state); the team records at its end reach at
+; most the end of the base memory. LOAD HIGHLIGHTS reads a .HIL whole to
+; highlights_state: $8CE bytes and $4A38 for each of at most ten
+; highlights ($18C150 stores that 192,254 as the buffer's length); the
+; cached-team backup at $C9BBC ($1AB0AE) follows the region.
+highlights_state        equ $9ACBE
+HIGHLIGHTS_REGION_SIZE  equ $C9BBC-highlights_state
 competition_save_diy    equ $1D1B3E
 competition_save_preset equ $1D1AC6
 competition_save_season equ $1D1A80     ; BRA to competition_save_career

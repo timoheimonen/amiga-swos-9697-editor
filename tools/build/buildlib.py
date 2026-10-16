@@ -1,4 +1,4 @@
-# SWOS 96-97 In-Game Editors V0.9b
+# SWOS 96-97 In-Game Editors V0.91b
 # Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 # Licensed under the MIT License. See the LICENSE file for details.
 """Shared helpers of the build: inputs, toolchain, linker maps and size caps.

@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.9b
+; SWOS 96-97 In-Game Editors V0.91b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -19,12 +19,20 @@
 ;     screens use: the recognized saves (.DIY .PRE .SEA .CAR .TAC .HIL) and
 ;     CUSTOMS.EDT, sorted by name, at most NATIVE_SAVES_MAX saves, so the
 ;     game's 60-record buffer and its 45-save chooser stay within their
-;     limits; the editors' own files never appear there;
+;     limits; the editors' own files never appear there. A recognized
+;     save is named as the game names its saves (a base of 1-8 characters
+;     and the suffix in capitals), since the chooser copies a chosen name
+;     into 13-byte buffers without a bound; a longer name is never listed;
 ;   - FORMAT SAVE DISK changes nothing: the directory needs no format and
 ;     its files are never deleted; the save-disk marker the game writes
 ;     afterwards is not stored;
-;   - reads never pass the file's length; an editor read never passes the
+;   - reads never pass the file's length; a native read of a save or of
+;     CUSTOMS.EDT never passes the region the game reads it into (a longer
+;     file is refused as a read error); an editor read never passes the
 ;     caller's capacity; editor writes are read back and compared;
+;   - a name the listing holds is a file, also when its length reads as 0
+;     (an empty file, or one WHDLoad no longer sees after a failed write
+;     to it): it can be deleted and it is no new name;
 ;   - before a write, a delete or a listing the four audio channels are
 ;     silenced, and every operation returns with no key held (WHDLoad runs
 ;     the operating system for them).
@@ -81,25 +89,78 @@ save_volume:
         dc.w    sv_list-.table, sv_format-.table, sv_open-.table
         dc.w    sv_close-.table, sv_read_handle-.table, sv_seek-.table
 
-; OFS_READ: the whole file to A1 (unbounded, as the native read).
+; OFS_READ: the whole file to A1, as the native read, unless it is longer
+; than the region the game reads such a file into (read_limit): that one is
+; refused as a read error and nothing is read.
 sv_read:
         movea.l a1,a3
+        bsr.w   read_limit              ; D4 = the longest file the region takes
         bsr.w   native_path             ; A0 = path
         bne.s   .missing
         bsr.w   file_size
         beq.s   .absent
         move.l  d0,d3
+        cmp.l   d4,d3
+        bhi.s   .too_long
         moveq   #0,d1
         movea.l a3,a1
-        bsr.w   file_read_part
+        bsr.w   file_read_part          ; D0 = the length
         move.l  d3,d1
         bra.s   .done
+.too_long:
+        move.l  #FSE_READ_ERROR,d0      ; longer than the region: not read
+        bra.s   .missing
 .absent:
         move.l  #FSE_NOT_FOUND,d0
 .missing:
         moveq   #0,d1
 .done:
         moveq   #1,d2
+        rts
+
+; read_limit: A0 = "DF2:name". D4.l = the longest file the game's read of
+; that name can take: the region from the address it reads a save into to
+; the next data (DIY and preset competitions and seasons and careers up to
+; the end of the base memory, highlights up to the cached-team backup that
+; follows them), one tactic record, a team group for CUSTOMS.EDT; no limit
+; for any other name. Changes no other register.
+read_limit:
+        movem.l d0-d1/a0-a1,-(sp)
+        addq.l  #4,a0                   ; after "DF2:"
+        moveq   #-1,d4
+        lea     customs_name(pc),a1
+        bsr.w   compare_names
+        bne.s   .suffix
+        move.l  #TEAM_GROUP_BUFFER_SIZE,d4
+        bra.s   .done
+.suffix:
+        movea.l a0,a1
+.end:
+        tst.b   (a1)+
+        bne.s   .end
+        suba.l  a0,a1                   ; the length and the NUL
+        cmpa.w  #6,a1                   ; at least one character and the suffix
+        bcs.s   .done
+        adda.l  a1,a0
+        subq.l  #5,a0                   ; the last four characters
+        lea     read_limits(pc),a1
+.limit:
+        tst.l   (a1)
+        beq.s   .done
+        moveq   #3,d1
+.char:
+        move.b  (a0,d1.w),d0
+        bsr.w   upper_case
+        cmp.b   (a1,d1.w),d0
+        bne.s   .next
+        dbf     d1,.char
+        move.l  4(a1),d4
+        bra.s   .done
+.next:
+        addq.l  #8,a1
+        bra.s   .limit
+.done:
+        movem.l (sp)+,d0-d1/a0-a1
         rts
 
 ; OFS_WRITE: D1 bytes from A1 (the file is replaced).
@@ -133,6 +194,8 @@ sv_delete:
         bne.s   .done
         bsr.w   file_size
         bne.s   .exists
+        bsr.w   path_listed             ; empty, or no longer seen by WHDLoad
+        beq.s   .exists
         move.l  #FSE_NOT_FOUND,d0
         bra.s   .done
 .exists:
@@ -504,11 +567,16 @@ svc_write:
 .done:
         rts
 
-; admit_name: A4 = name of a file that does not exist yet. D0.l = 0 (Z set)
-; while data/ takes another name (and, for a recognized save, another save),
-; else STE_DIR_FULL or STE_SAVES_FULL.
+; admit_name: A4 = name of a file whose length reads as 0. D0.l = 0 (Z set)
+; when the listing already holds the name (an empty file, or one WHDLoad no
+; longer sees: no new name) or while data/ takes another name (and, for a
+; recognized save, another save), else STE_DIR_FULL or STE_SAVES_FULL.
 admit_name:
         movem.l a0/a2,-(sp)
+        movea.l a4,a0
+        moveq   #0,d0
+        bsr.w   name_listed
+        beq.s   .done                   ; not a new name
         movea.l expmem(pc),a2
         lea     SA_CATALOG(a2),a2
         moveq   #STE_DIR_FULL,d0
@@ -583,6 +651,8 @@ svc_delete:
         bne.s   .done
         bsr.w   file_size
         bne.s   .exists
+        bsr.w   path_listed             ; empty, or no longer seen by WHDLoad
+        beq.s   .exists
         moveq   #STE_NOT_FOUND,d0
         bra.s   .done
 .exists:
@@ -784,23 +854,31 @@ make_path:
         rts
 
 ; recognized_save: A0 = name. Z set when it is a save the native chooser
-; recognizes: 5-29 characters ending in .DIY .PRE .SEA .CAR .TAC or .HIL,
-; in any case, without control characters.
+; recognizes and its name buffers hold, named as the game names its saves:
+; a base of 1-SAVE_BASE_MAX characters without control characters, then at
+; the first dot .DIY .PRE .SEA .CAR .TAC or .HIL in capitals, and nothing
+; after it. The game finds the suffix at the first dot and compares it
+; with its case, and it copies a chosen name into 13-byte buffers without a
+; bound, so a longer name would overwrite its chooser state.
 recognized_save:
-        movem.l d0-d2/a0-a1,-(sp)
-        moveq   #FS_NAME_MAX,d0
+        movem.l d0-d1/a0-a1,-(sp)
+        moveq   #SAVE_BASE_MAX+4,d0
         bsr.s   name_check
         bne.s   .no
-        movea.l a0,a1
-.end:
-        tst.b   (a1)+
-        bne.s   .end
-        subq.l  #1,a1                   ; the NUL
-        move.l  a1,d0
-        sub.l   a0,d0
-        cmpi.l  #5,d0
-        bcs.s   .no
-        lea     -4(a1),a0               ; the last four characters
+        moveq   #0,d1                   ; characters before the first dot
+.base:
+        move.b  (a0,d1.w),d0
+        beq.s   .no                     ; no dot
+        cmpi.b  #'.',d0
+        beq.s   .dot
+        addq.w  #1,d1
+        cmpi.w  #SAVE_BASE_MAX,d1
+        bls.s   .base
+        bra.s   .no                     ; no dot within the base
+.dot:
+        tst.w   d1
+        beq.s   .no                     ; no base
+        adda.w  d1,a0                   ; the suffix
         lea     save_suffixes(pc),a1
 .suffix:
         tst.b   (a1)
@@ -808,21 +886,21 @@ recognized_save:
         moveq   #0,d1
 .char:
         move.b  (a0,d1.w),d0
-        bsr.w   upper_case
         cmp.b   (a1,d1.w),d0
         bne.s   .next
         addq.w  #1,d1
         cmpi.w  #4,d1
-        bne.s   .char
-        moveq   #0,d0                   ; Z set
-        bra.s   .done
+        bcs.s   .char
+        tst.b   4(a0)                   ; nothing after the suffix
+        beq.s   .done                   ; Z set
+        bra.s   .no
 .next:
         addq.l  #4,a1
         bra.s   .suffix
 .no:
         moveq   #1,d0                   ; Z clear
 .done:
-        movem.l (sp)+,d0-d2/a0-a1
+        movem.l (sp)+,d0-d1/a0-a1
         rts
 
 ; compare_names: A0, A1 = names. D0.l < 0, 0 or > 0 (flags set) as the
@@ -918,6 +996,37 @@ catalog_stale:
         movea.l expmem(pc),a0
         clr.w   SA_CATALOG+CAT_STATE(a0)
         movea.l (sp)+,a0
+        rts
+
+; path_listed: A0 = "data/name" (catalog valid). Z set when the remembered
+; listing holds the name. Changes no register.
+path_listed:
+        move.l  a0,-(sp)
+        addq.l  #5,a0                   ; after "data/"
+        bsr.s   name_listed
+        movea.l (sp)+,a0                ; MOVEA keeps the flags
+        rts
+
+; name_listed: A0 = name (catalog valid). Z set when the remembered listing
+; holds it, ignoring ASCII case. Changes no register.
+name_listed:
+        movem.l d0-d1/a1-a2,-(sp)
+        movea.l expmem(pc),a2
+        lea     SA_NAMES(a2),a1
+        move.l  SA_CATALOG+CAT_COUNT(a2),d1
+.name:
+        subq.l  #1,d1
+        bmi.s   .none
+        bsr.w   compare_names           ; keeps A0 and A1
+        beq.s   .done                   ; Z set
+.skip:
+        tst.b   (a1)+
+        bne.s   .skip
+        bra.s   .name
+.none:
+        moveq   #1,d0                   ; Z clear
+.done:
+        movem.l (sp)+,d0-d1/a1-a2
         rts
 
 ; native_listing: A1 = destination (catalog valid). Writes the game's
@@ -1138,13 +1247,16 @@ dos_result:
 
 ; operation_done: D0.l = result of a save-volume operation. Records it in
 ; the slave block, makes the next operation list data/ again after a
-; failure, and returns with no key held. Changes no register.
+; failure, and returns with no key held. Changes no register. OFS_OPEN's
+; handles 1 and 2 and a machine without a clock are no failures.
 operation_done:
         move.l  a0,-(sp)
         lea     SLAVE_BLOCK,a0
         move.l  d0,SB_FILE_RESULT(a0)
         addq.l  #1,SB_FILE_OPERATIONS(a0)
-        tst.l   d0
+        cmpi.l  #2,d0
+        bls.s   .keys                   ; 0, or a handle
+        cmpi.l  #STE_NO_TIME,d0
         beq.s   .keys
         cmpi.l  #FSE_NOT_FOUND,d0
         beq.s   .keys
@@ -1167,3 +1279,19 @@ marker_name:
 save_suffixes:
         dc.b    ".DIY.PRE.SEA.CAR.TAC.HIL",0
         even
+; read_limits: per suffix the longest file a native read of a save can take
+; (read_limit), ended by a zero long.
+read_limits:
+        dc.b    ".DIY"
+        dc.l    SWOS2_RAM_SIZE-competition_state
+        dc.b    ".PRE"
+        dc.l    SWOS2_RAM_SIZE-competition_state
+        dc.b    ".SEA"
+        dc.l    SWOS2_RAM_SIZE-season_state
+        dc.b    ".CAR"
+        dc.l    SWOS2_RAM_SIZE-season_state
+        dc.b    ".HIL"
+        dc.l    HIGHLIGHTS_REGION_SIZE
+        dc.b    ".TAC"
+        dc.l    TACTIC_SIZE
+        dc.l    0

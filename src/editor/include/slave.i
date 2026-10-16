@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.9b
+; SWOS 96-97 In-Game Editors V0.91b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -134,3 +134,8 @@ SAVE_DIR_MAX_NAMES      equ 512
 ; offers at most 45 recognized saves.
 NATIVE_LIST_MAX         equ 60
 NATIVE_SAVES_MAX        equ 45
+; A save the game lists is named as the game names its saves: a base of at
+; most this many characters, then the suffix (.DIY .PRE .SEA .CAR .TAC
+; .HIL) in capitals at the first dot. The chooser copies a chosen name into
+; 13-byte buffers without a bound.
+SAVE_BASE_MAX           equ 8

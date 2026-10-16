@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.9b
+; SWOS 96-97 In-Game Editors V0.91b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -13,7 +13,9 @@
 ;     (YES/NO) run the dialog as a modal child, so the native parent is
 ;     rebuilt afterwards; message_ask returns D0.l = 1 for YES, 0 for NO;
 ;     message_note (A0 = title, A1 = packed lines) does all three for a
-;     message of fixed texts;
+;     message of fixed texts; while an editor screen runs (also in a
+;     native flow its routines started) they show nothing and answer NO,
+;     since a second screen would take over the dialog state;
 ;   - inside an editor screen: message_open (D0.w = MSG_OK or MSG_ASK)
 ;     replaces the screen's dialog, and message_poll (D7.w events, D6.w key)
 ;     returns D0.l = -1 while it is open, else the answer; the screen then
@@ -126,8 +128,12 @@ run_modal:
         bsr.w   message_state
         move.w  d0,MSG_KIND(a4)
         move.w  #ANSWER_NO,MSG_ANSWER(a4)
+        movea.l editor_base,a0
+        tst.l   WORK_SCREEN+SCR_RECORD(a0)
+        bne.s   .answer                 ; inside an editor screen: not shown
         lea     message_screen(pc),a0
         bsr.l   screen_run
+.answer:
         moveq   #0,d0
         move.w  MSG_ANSWER(a4),d0
         movem.l (sp)+,a0/a4

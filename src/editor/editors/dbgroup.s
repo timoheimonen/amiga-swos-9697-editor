@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.9b
+; SWOS 96-97 In-Game Editors V0.91b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -171,6 +171,9 @@ show_group:
         moveq   #TEAM_NAME_SIZE-1,d0
         bsr.l   text_copy_max
         lea     chosen_text(pc),a0
+        cmpi.w  #NATIONAL_FIRST,DB_GROUP(a4)
+        bcs.s   .text
+        lea     chosen_national_text(pc),a0 ; no swap or copy here
         bra.s   .text
 .choose:
         lea     choose_text(pc),a0
@@ -311,7 +314,14 @@ club_chosen:
         move.w  DB_PICK(a4),d1
         beq.s   .choose
         cmpi.w  #PICK_COPY_SLOT,d1
-        beq.w   ask_copy
+        bne.s   .pair
+        move.w  DB_GROUP(a4),d1
+        cmp.w   DB_COPY_GROUP(a4),d1
+        bne.w   ask_copy
+        cmp.b   DB_COPY_RECORD+TEAM_KEY+1(a4),d0
+        bne.w   ask_copy
+        bra.s   .same                   ; the club itself: a copy changes nothing
+.pair:
         cmp.w   DB_CLUB(a4),d0
         beq.s   .same
         move.w  d0,DB_SECOND(a4)
@@ -659,10 +669,11 @@ swap_label:             dc.b    '_DIVISION SWAP',0
 exchange_label:         dc.b    'E_XCHANGE',0
 copy_label:             dc.b    '_COPY TO COUNTRY',0
 clubs_text:             dc.b    ' CLUBS',0
-teams_text:             dc.b    ' NATIONAL TEAMS',0
-changed_text:           dc.b    ', CHANGED (SAVE ON THE DATABASE SCREEN)',0
+teams_text:             dc.b    ' TEAMS',0
+changed_text:           dc.b    ', CHANGED: SAVE ON THE DATABASE SCREEN',0
 choose_text:            dc.b    'CHOOSE A CLUB',0
-chosen_text:            dc.b    ': EDIT TEAM, SWAP, EXCHANGE OR COPY',0
+chosen_text:            dc.b    ': EDIT, SWAP, EXCHANGE OR COPY',0
+chosen_national_text:   dc.b    ': EDIT TEAM OR EXCHANGE',0
 pick_swap_text:         dc.b    'DIVISION SWAP: CHOOSE THE SECOND CLUB',0
 pick_exchange_text:     dc.b    'EXCHANGE: CHOOSE THE SECOND CLUB',0
 pick_copy_text:         dc.b    'COPY ',0

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SWOS 96-97 In-Game Editors V0.9b
+# SWOS 96-97 In-Game Editors V0.91b
 # Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 # Licensed under the MIT License. See the LICENSE file for details.
 """Tournament definitions (.DEF) on the host.
@@ -497,7 +497,10 @@ def encode_body(document: dict[str, Any]) -> bytes:
     database = document["database"]
     if database["kind"] == "edited":
         struct.pack_into(">HHI", body, B_DB_KIND, 1, database["generation"], int(database["crc32"], 16))
-        body[B_DB_LABEL:B_DB_LABEL + LABEL_SIZE] = database["label"].encode("latin-1").ljust(LABEL_SIZE, b"\0")
+        label = database["label"].encode("latin-1")
+        if len(label) > LABEL_SIZE:
+            raise ValueError(f"database.label is longer than {LABEL_SIZE} characters")
+        body[B_DB_LABEL:B_DB_LABEL + LABEL_SIZE] = label.ljust(LABEL_SIZE, b"\0")
     elif database["kind"] != "original":
         raise ValueError("database.kind must be original or edited")
     if document.get("custom_set_crc32") is not None:

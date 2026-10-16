@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.9b
+; SWOS 96-97 In-Game Editors V0.91b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -111,7 +111,7 @@ base:
 
 name:   dc.b    "Sensible World of Soccer '96-'97",0
 copy:   dc.b    "1996 Sensible Software / Renegade",0
-info:   dc.b    "In-Game Editors V0.9b",10
+info:   dc.b    "In-Game Editors V0.91b",10
         dc.b    "by Timo Heimonen",0
         even
 

@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.9b
+; SWOS 96-97 In-Game Editors V0.91b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -92,10 +92,10 @@ DB_STATUS               equ 144         ; 56 bytes: status line
 DB_INFO                 equ 200         ; 56 bytes: the set line
 DB_INFO2                equ 256         ; 56 bytes: what new competitions use
 DB_CAPTION              equ 312         ; 40 bytes: the main-menu caption
-DB_NAME                 equ 352         ; 16 bytes: a file name being built
+DB_NAME                 equ 352         ; FS_RECORD_SIZE bytes: a file name being built
 DB_ROW_SIZE             equ 24
 DB_ROW_COUNT            equ 24
-DB_ROWS                 equ 368         ; DB_ROW_COUNT row labels
+DB_ROWS                 equ DB_NAME+FS_RECORD_SIZE ; DB_ROW_COUNT row labels
 DB_COPY_RECORD          equ DB_ROWS+DB_ROW_COUNT*DB_ROW_SIZE ; TEAM_SIZE bytes
 DB_SET                  equ DB_COPY_RECORD+TEAM_SIZE ; MANIFEST_MAX bytes each
 DB_ACTIVE               equ DB_SET+MANIFEST_MAX
@@ -112,7 +112,9 @@ DB_CUP                  equ DB_START+40 ; word: the cup the cups screen shows
 DB_CUP_KEYS             equ DB_START+42 ; CUP_KEYS words: the 96/97 participant lists
 DB_CUP_ROW_SIZE         equ 24
 DB_CUP_ROWS             equ DB_CUP_KEYS+CUP_KEYS*2 ; CUP_MAX_TEAMS row labels
-DB_SIZE                 equ DB_CUP_ROWS+CUP_MAX_TEAMS*DB_CUP_ROW_SIZE
+DB_BAK_FAILED           equ DB_CUP_ROWS+CUP_MAX_TEAMS*DB_CUP_ROW_SIZE ; word: a SAVE of
+                                        ; this session failed to write DBASE.BAK
+DB_SIZE                 equ DB_BAK_FAILED+2
 DBM_MAIN                equ 0           ; the screen's own dialog
 DBM_TYPING              equ 1           ; the keyboard field takes the keys
 DBM_MESSAGE             equ 2           ; a message is open
@@ -142,7 +144,8 @@ TE_CLIP_VALID           equ 30          ; word: the clipboard holds a player
 TE_CLIP                 equ 32          ; PLAYER_SIZE bytes, then a pad word
 TE_IMPORT_BASE          equ 72          ; TEAM_SIZE bytes: working copy after IMPORT
 TE_SCREEN_BASE          equ TE_IMPORT_BASE+TEAM_SIZE ; working copy when a screen opened
-TE_SIZE                 equ TE_SCREEN_BASE+TEAM_SIZE
+TE_SAVE_FAILED          equ TE_SCREEN_BASE+TEAM_SIZE ; word: CUSTOMS.EDT failed after its backup
+TE_SIZE                 equ TE_SAVE_FAILED+2
 
 ; State of the open team screen (SETTINGS or PLAYER; never both).
 WORK_TEAM_SCREEN        equ WORK_TEAM+TE_SIZE

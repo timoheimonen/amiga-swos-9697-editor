@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SWOS 96-97 In-Game Editors V0.9b
+# SWOS 96-97 In-Game Editors V0.91b
 # Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 # Licensed under the MIT License. See the LICENSE file for details.
 """The custom set CUSTOMS.EDT on the host: the editors' rules in Python.
@@ -83,17 +83,21 @@ def is_keeper(record: bytes) -> bool:
 
 
 def team_validate(team: bytes, original: bytes, imported: bytes | None = None,
-                  owned: int = 0) -> tuple[str, int] | None:
+                  owned: int = 0, kept: tuple[bytes, ...] = ()) -> tuple[str, int] | None:
     """None when team OK may commit the record, else (reason, slot or -1).
 
     owned is the mask of user-owned tactic slots (bit n = USER A+n): a
-    default tactic 12-17 passes while its slot is user-owned."""
+    default tactic 12-17 passes while its slot is user-owned. kept are
+    further records whose values outside the editors' ranges count as kept,
+    as those of original and imported do (the record the editor would have
+    loaded: the install's current set or custom set)."""
+    bases = [original] + ([imported] if imported is not None else []) + list(kept)
     for kit in (HOME_KIT, AWAY_KIT):
         if team[kit] > 3 or max(team[kit + 1:kit + 5]) > 9:
             return REASONS["kit"], -1
     tactic = team[TACTIC]
-    if tactic >= 12 and (tactic > 17 or not (owned >> (tactic - 12)) & 1 and (
-            tactic != original[TACTIC] and (imported is None or tactic != imported[TACTIC]))):
+    if tactic >= 12 and (tactic > 17 or not (owned >> (tactic - 12)) & 1 and
+                         all(tactic != base[TACTIC] for base in bases)):
         return REASONS["tactic"], -1
     lineup = team[LINEUP:LINEUP + 16]
     if sorted(lineup) != list(range(16)):
@@ -113,9 +117,7 @@ def team_validate(team: bytes, original: bytes, imported: bytes | None = None,
                 return REASONS["keeper_skills"], slot
             value = record[RATING]
             if value > KEEPER_RATING_MAX:
-                kept = value == player(original, slot)[RATING] or (
-                    imported is not None and value == player(imported, slot)[RATING])
-                if value > KEEPER_RATING_KEPT_MAX or not kept:
+                if value > KEEPER_RATING_KEPT_MAX or all(value != player(base, slot)[RATING] for base in bases):
                     return REASONS["keeper_rating"], slot
         elif record[RATING] != rating_sum(skills(record)):
             return REASONS["rating"], slot
@@ -217,26 +219,48 @@ def set_fingerprint(data: bytes) -> str:
     return f"{zlib.crc32(data) & 0xFFFFFFFF:08X}"
 
 
+def stored(directory: Path, name: str) -> Path:
+    """The file of a save directory with that name, ignoring case as the game,
+    the editors and AmigaDOS do (a host may store dbase.cfg or customs.edt);
+    directory / name when there is none."""
+    path = directory / name
+    if path.exists() or not directory.is_dir():
+        return path
+    wanted = name.upper()
+    for candidate in directory.iterdir():
+        if candidate.name.upper() == wanted and candidate.is_file():
+            return candidate
+    return path
+
+
+def is_whole_set(raw: bytes, whole: int) -> bool:
+    """A custom set of the length whole whose count word matches it, as the
+    team editor takes a CUSTOMS.EDT (customs_check)."""
+    return len(raw) == whole and int.from_bytes(raw[:2], "big") * TEAM_SIZE + 2 == whole
+
+
 def save_custom_set(directory: Path, data: bytes, whole: int | None = None) -> bool:
     """Writes CUSTOMS.EDT into a save directory, backup first so that a
-    failed save keeps the previous set. A previous CUSTOMS.EDT whose length
-    is not `whole` (when given) is not a whole set and is not backed up, so
-    CUSTOMS.BAK keeps what it holds. Returns whether the backup was written.
-    Raises SaveError naming the failed step; the previous CUSTOMS.EDT is
-    then either untouched (backup step) or kept in a verified CUSTOMS.BAK."""
+    failed save keeps the previous set. A previous CUSTOMS.EDT that is not a
+    whole set (when `whole` is given: another length, or a team count that
+    does not match it) is not backed up, so CUSTOMS.BAK keeps what it holds.
+    Returns whether the backup was written. Raises SaveError naming the
+    failed step; the previous CUSTOMS.EDT is then either untouched (backup
+    step) or kept in a verified CUSTOMS.BAK."""
     if not data:
         raise SaveError("check", "a custom set is never empty")
-    target, backup = directory / CUSTOM_SET_NAME, directory / BACKUP_NAME
+    target, backup = stored(directory, CUSTOM_SET_NAME), stored(directory, BACKUP_NAME)
     backed_up = False
-    if target.exists() and (whole is None or target.stat().st_size == whole):
+    if target.exists():
         try:
             previous = target.read_bytes()
-            backup.write_bytes(previous)
-            if backup.read_bytes() != previous:
-                raise SaveError("backup", "CUSTOMS.BAK reads back differently")
+            if whole is None or is_whole_set(previous, whole):
+                backup.write_bytes(previous)
+                if backup.read_bytes() != previous:
+                    raise SaveError("backup", "CUSTOMS.BAK reads back differently")
+                backed_up = True
         except OSError as exc:
             raise SaveError("backup", str(exc)) from exc
-        backed_up = True
     try:
         target.write_bytes(data)
         if target.read_bytes() != data:

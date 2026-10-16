@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.9b
+; SWOS 96-97 In-Game Editors V0.91b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -19,6 +19,11 @@
 ;
 ; Screen record: dc.l open routine, dc.l tick routine (both relocated with
 ; the image; called with A5 = editor base).
+;
+; WORK_SCREEN+SCR_RECORD names the screen running, 0 when none: screen_run
+; puts the record and SCR_OPENED of an outer screen back when it returns.
+; The dialog state is shared, so a screen never opens inside another one's
+; open or tick routine (message.s does not show a message there).
 
         include "swos2.i"
         include "slave.i"
@@ -45,11 +50,16 @@ screen_run:
         movem.l d0-d7/a0-a6,-(sp)
         bsr.l   dialog_flush            ; a screen's kept paints are its own
         movea.l editor_base,a5
+        move.l  WORK_SCREEN+SCR_RECORD(a5),-(sp) ; an outer screen's, or 0
+        move.w  WORK_SCREEN+SCR_OPENED(a5),-(sp)
         move.l  a0,WORK_SCREEN+SCR_RECORD(a5)
         clr.w   WORK_SCREEN+SCR_OPENED(a5)
         move.w  #1,menu_release_gate
         lea     screen_host(pc),a6
         jsr     menu_run_modal
+        movea.l editor_base,a5
+        move.w  (sp)+,WORK_SCREEN+SCR_OPENED(a5)
+        move.l  (sp)+,WORK_SCREEN+SCR_RECORD(a5)
         movem.l (sp)+,d0-d7/a0-a6
         rts
 

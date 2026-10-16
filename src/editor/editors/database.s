@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.9b
+; SWOS 96-97 In-Game Editors V0.91b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -240,23 +240,30 @@ database_open:
         bne.w   start_note
         lea     recover_title(pc),a0
         bsr.l   message_title
-        lea     DB_STATUS(a4),a1
         lea     missing_cfg_text(pc),a0
+        moveq   #1,d2                   ; the first line of recover_lines
         cmpi.w  #DSS_NONE,DB_SET_STATE(a4)
         beq.s   .reason
-        lea     damaged_cfg_text(pc),a0
-        bsr.l   text_copy
+        lea     damaged_cfg_text(pc),a0 ; the problem on a line of its own
+        moveq   #0,d0
+        bsr.l   message_line
+        lea     DB_STATUS(a4),a1
         moveq   #0,d0
         move.w  DB_SET_PROBLEM(a4),d0
         moveq   #0,d1
         move.w  DB_SET_DETAIL(a4),d1
         bsr.l   db_problem_text
         lea     DB_STATUS(a4),a0
+        moveq   #1,d0
+        bsr.l   message_line
+        moveq   #2,d2
+        bra.s   .lines
 .reason:
         moveq   #0,d0
         bsr.l   message_line
+.lines:
         lea     recover_lines(pc),a0
-        moveq   #1,d0
+        move.w  d2,d0
         bsr.l   message_lines
         move.w  #STEP_RECOVER,DB_STEP(a4)
         bra.w   open_question
@@ -504,7 +511,18 @@ build_texts:
         bsr.l   db_label_crc
         lea     comma_text(pc),a0
         bsr.l   text_copy
-        move.w  DB_SET+MF_COUNT(a4),d0
+        moveq   #0,d0                   ; the groups; the copies follow them
+        move.w  DB_SET+MF_COUNT(a4),d1
+        lea     DB_SET+MANIFEST_HEADER(a4),a0
+        bra.s   .count_next
+.count:
+        cmpi.w  #COPY_FIRST,ME_GROUP(a0)
+        bcc.s   .counted
+        addq.w  #1,d0
+        lea     MANIFEST_ENTRY(a0),a0
+.count_next:
+        dbf     d1,.count
+.counted:
         bsr.l   text_decimal
         lea     groups_text(pc),a0
         cmpi.w  #1,d0
@@ -789,6 +807,7 @@ remove_chosen:
         bsr.l   message_line
         bra.w   open_message
 .failed:
+        move.l  d0,d2
         lea     remove_title(pc),a0
         bsr.l   message_title
         moveq   #0,d1
@@ -798,6 +817,12 @@ remove_chosen:
         lea     nothing_removed_line(pc),a0
         moveq   #1,d0
         bsr.l   message_line
+        cmpi.l  #STE_NOT_FOUND,d2
+        bne.s   .reason_shown
+        lea     backup_unseen_lines(pc),a0  ; DBASE.BAK unseen after a failed save
+        moveq   #2,d0
+        bsr.l   message_lines
+.reason_shown:
         bra.w   open_message
 
 ; ---------------------------------------------------------------------------
@@ -1072,7 +1097,7 @@ body_commands:
         dc.b    '* IN THE SET  + CHANGED',0
         even
         dc.w    UI_TEXT,ROW_X,CREDIT_Y,ROW_W*2+8,UI_DIM,UI_CENTER
-        dc.b    'V0.9b by Timo Heimonen (timo.heimonen@proton.me)',0
+        dc.b    'V0.91b by Timo Heimonen (timo.heimonen@proton.me)',0
         even
         dc.w    UI_END
 
@@ -1101,7 +1126,7 @@ start_line0:            dc.b    'THE EDITED DATABASE WAS NOT SWITCHED ON AT STAR
 start_line2:            dc.b    'NEW COMPETITIONS USE THE ORIGINAL DATABASE.',0
 switch_not_saved_title: dc.b    'SWITCH NOT SAVED',0
 switch_not_saved_line:  dc.b    'THE NEXT START DOES NOT REMEMBER THIS CHANGE.',0
-end_copy_label:         dc.b    'E_ND COPY',0
+end_copy_label:         dc.b    '_END COPY',0
 no_set_text:            dc.b    'NO EDITED SET IN THE SAVE DIRECTORY YET',0
 damaged_set_text:       dc.b    'DBASE.CFG IS DAMAGED. NOTHING CAN BE SAVED.',0
 set_text:               dc.b    'SET: ',0
@@ -1117,7 +1142,7 @@ changed_suffix:         dc.b    ' NOT SAVED YET',0
 typing_text:            dc.b    'TYPE THE LABEL, RETURN KEEPS IT, ESC UNDOES',0
 recover_title:          dc.b    'DBASE.CFG',0
 missing_cfg_text:       dc.b    'DBASE.CFG IS MISSING.',0
-damaged_cfg_text:       dc.b    'DAMAGED: ',0
+damaged_cfg_text:       dc.b    'DBASE.CFG IS DAMAGED:',0
 recover_lines:          dc.b    'DBASE.BAK HOLDS THE PREVIOUS SET.',0
                         dc.b    'RESTORE DBASE.CFG FROM IT NOW?',0
                         dc.b    0
@@ -1151,6 +1176,9 @@ remove_lines:           dc.b    'NO DBASE.CFG, DBASE.BAK OR LINK HERE USES THEM.
                         dc.b    0
 no_old_line:            dc.b    'THERE ARE NO OLD VERSIONS.',0
 nothing_removed_line:   dc.b    'NOTHING WAS REMOVED.',0
+backup_unseen_lines:    dc.b    'DBASE.BAK CANNOT BE READ AFTER A FAILED SAVE:',0
+                        dc.b    'START THE GAME AGAIN FIRST.',0
+                        dc.b    0
 removed_suffix:         dc.b    ' OLD GROUP FILES REMOVED.',0
 removed_one_suffix:     dc.b    ' OLD GROUP FILE REMOVED.',0
 switch_title:           dc.b    'USE EDITED DATABASE',0

@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.9b
+; SWOS 96-97 In-Game Editors V0.91b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -9,7 +9,9 @@
 ;                       CRC-32, marked '*' while accepted edits are unsaved
 ;   team_import_action  IMPORT: the native one, then a copy of the imported
 ;                       record as the baseline its kept values are checked
-;                       against
+;                       against (only when IMPORT replaced the working
+;                       copy: the native flag stays set from an earlier
+;                       IMPORT when the club chooser is left)
 ;   team_ok_action      OK: validates the whole working copy first; a team
 ;                       that breaks a rule stays on the page with a message
 ;   team_row_action     EDIT of a player row: the player screen
@@ -113,15 +115,28 @@ team_copy:
 
 ; ---------------------------------------------------------------------------
 ; team_import_action: IMPORT with the imported record kept as a baseline.
+; A club chooser left without a choice changes nothing, but leaves the
+; native flag of an earlier IMPORT set: the baseline is taken only when the
+; working copy changed (TE_SCREEN_BASE is free while no team screen runs).
 ; ---------------------------------------------------------------------------
 team_import_action:
         movea.l editor_base,a4
         cmpi.w  #DBS_TEAM,WORK_DB+DB_SCREEN(a4)
         beq.s   .database
+        lea     team_working_copy,a0
+        lea     WORK_TEAM+TE_SCREEN_BASE(a4),a1
+        bsr.s   team_copy               ; the working copy before IMPORT
         jsr     custom_team_import
         movea.l editor_base,a4
         tst.w   custom_team_imported
         beq.s   .done
+        lea     team_working_copy,a0
+        lea     WORK_TEAM+TE_SCREEN_BASE(a4),a1
+        move.w  #TEAM_SIZE/4-1,d0
+.compare:
+        cmpm.l  (a0)+,(a1)+
+        dbne    d0,.compare
+        beq.s   .done                   ; unchanged: no club was chosen
         lea     team_working_copy,a0
         lea     WORK_TEAM+TE_IMPORT_BASE(a4),a1
         bsr.s   team_copy

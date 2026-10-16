@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.9b
+; SWOS 96-97 In-Game Editors V0.91b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -63,7 +63,7 @@
         xref    crc32_buffer
         xref    db_identity
         xref    tactic_check, tactic_problem_text
-        xref    storage_size, storage_volume_ready
+        xref    storage_volume_ready, customs_check
         xref    message_title, message_line, message_lines, message_show, message_ask
         xref    text_copy, text_decimal, text_glyph
 
@@ -1135,7 +1135,10 @@ definition_problem_text:
 ; (DPS_CUSTOM_SET, after the request storage_volume_ready replaces); game
 ; disk 2 is selected again afterwards, as the native flows leave it. Finds
 ; the participant's key. A0 = the record in team_group_buffer with Z clear,
-; or Z set when the team is missing. Preserves D1-D7/A1-A6.
+; or Z set when the team is missing. A custom set that is missing or not
+; whole (customs_check) is not loaded, so its refusal never opens a message
+; inside an editor screen, and a group that could not be loaded is missing
+; (team_group_buffer still holds an earlier group). Preserves D1-D7/A1-A6.
 ; ---------------------------------------------------------------------------
 definition_find_team:
         movem.l d1-d2/d7/a1,-(sp)
@@ -1143,19 +1146,22 @@ definition_find_team:
         move.b  DP_GROUP(a3),d0
         cmpi.b  #DPS_CUSTOM_SET,DP_SOURCE(a3)
         bne.s   .database
-        lea     custom_set_name,a0      ; a missing custom set is a missing team
-        bsr.l   storage_size
-        bne.s   .missing
+        bsr.l   customs_check           ; a missing or damaged custom set:
+        bne.s   .missing                ; a missing team
         bsr.l   storage_volume_ready    ; clobbers D7
         moveq   #CUSTOM_SET_GROUP,d0
-        jsr     file_load_team_group
+        jsr     file_load_team_group    ; Z set when loaded
+        sne     d2
         jsr     game_disk2_request
+        tst.b   d2
+        bne.s   .missing
         bra.s   .loaded
 .database:
         jsr     game_disk2_request      ; D0/D1 are its results
         moveq   #0,d0
         move.b  DP_GROUP(a3),d0
-        jsr     file_load_team_group
+        jsr     file_load_team_group    ; Z set when loaded
+        bne.s   .missing
 .loaded:
         lea     team_group_buffer,a0
         moveq   #0,d1
@@ -1483,6 +1489,12 @@ definition_team_missing:
         tst.b   DP_SOURCE(a3)
         beq.s   .where
         lea     line_not_in_custom(pc),a0
+        move.l  d0,-(sp)
+        bsr.l   customs_check           ; 0 whole, STE_NOT_FOUND none
+        ble.s   .custom
+        lea     line_custom_damaged(pc),a0
+.custom:
+        move.l  (sp)+,d0
 .where:
         addq.w  #1,d0
         bra.l   message_line
@@ -1674,5 +1686,6 @@ text_team:              dc.b    'TEAM ',0
 text_of_list:           dc.b    ' OF THE LIST: ',0
 line_not_in_database:   dc.b    'IS NOT IN THE DATABASE IN USE.',0
 line_not_in_custom:     dc.b    'IS NOT IN THE EDITED CUSTOM TEAMS.',0
+line_custom_damaged:    dc.b    'CUSTOMS.EDT IS DAMAGED: NOT A WHOLE CUSTOM SET.',0
 line_not_started:       dc.b    'THE COMPETITION WAS NOT STARTED.',0
         even

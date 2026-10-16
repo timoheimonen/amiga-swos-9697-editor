@@ -147,9 +147,16 @@ may exchange the divisions of two teams:
   with skills or specialty flags (`A GOALKEEPER HAS OUTFIELD SKILLS.`), a
   goalkeeper rating above 38 (`THE GOALKEEPER RATING IS ABOVE 38.`), an
   outfield rating that is not the sum of the skills (`THE RATING DIFFERS
-  FROM THE SKILLS.`). Values of the game's own data outside these ranges
-  (goalkeeper ratings 39-40, a default tactic 12-17) are accepted while
-  they are unchanged, also for a team moved by EXCHANGE or COPY TO COUNTRY.
+  FROM THE SKILLS.`), and a changed name or coach with a character the
+  game cannot show (`A NAME HAS A CHARACTER THE GAME CANNOT SHOW.`). Values
+  of the game's own data outside these ranges (goalkeeper ratings 39-40, a
+  default tactic 12-17) are accepted while they are unchanged: as the
+  original team has them, as the install's edited set (or custom set) holds
+  them, which is the record the editors load and keep, or as the original
+  team of the same name has them (a team moved by EXCHANGE or COPY TO
+  COUNTRY, a club IMPORT brought into a custom slot). A user tactic 12-17
+  set in the game is therefore kept by later imports on the same install;
+  on another install it counts as new and is refused.
 - The cups: exactly 16, 32 and 32 clubs of club groups, no club twice in
   one cup or in two, no national or custom team.
 - The custom set keeps the game's number of teams.
@@ -387,9 +394,12 @@ a link or a manifest is for reading only"):
 | `customs-players.csv`, `customs-teams.csv` | The custom set |
 | `NAME.TAC`, `NAME.DEF` | Copied as they are, after the checks |
 
-Any other file is refused. A target name has 1-29 characters with a dot.
+Any other file is refused. A target name has 1-29 characters with a dot; a
+`.TAC` needs a name of 1-8 characters before `.TAC`, the names the game lists.
 A target that exists with the same contents is reported unchanged; a `.TAC`
-or `.DEF` that exists with other contents is replaced only with `--replace`.
+or `.DEF` that exists with other contents is replaced only with `--replace`,
+and a sound `.DEF` replaced is kept as `NAME.DEF.BAK` first, as SAVE
+DEFINITION keeps it.
 The save directory holds at most 512 names, 45 of them game saves.
 
 `patch.py db import INSTALL FILES` takes files ending in `players.csv`,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SWOS 96-97 In-Game Editors V0.9b
+# SWOS 96-97 In-Game Editors V0.91b
 # Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 # Licensed under the MIT License. See the LICENSE file for details.
 """Database mode on the host: the edited database set, link files, CSV and
@@ -430,12 +430,16 @@ def check_link(raw: bytes, family: int | None = None, save: bytes | None = None)
     link_family, save_length, save_crc = struct.unpack_from(">HII", body, 0)
     if link_family not in SAVE_SUFFIX or (family is not None and link_family != family):
         return LC_FAMILY, 0
-    if save is not None and (save_length != len(save) or save_crc != crc32(save)):
-        return LC_SAVE, 0
     manifest = body[L_MANIFEST:]
     if version == 1 and len(manifest) >= M_VERSION + 2 and manifest_version(manifest) != 1:
         return LC_VERSION, 0
-    return check_manifest(manifest)
+    code, detail = check_manifest(manifest)
+    if code != MC_OK:
+        return code, detail
+    # the editor compares the save after the link's own checks (load_common)
+    if save is not None and (save_length != len(save) or save_crc != crc32(save)):
+        return LC_SAVE, 0
+    return MC_OK, 0
 
 
 def decode_link(raw: bytes) -> dict:
@@ -477,26 +481,56 @@ def original_pool(originals: dict[int, bytes]) -> dict[bytes, bytes]:
     return pool
 
 
-def validate_group(group: int, raw: bytes, original: bytes, pool: dict[bytes, bytes] | None = None) -> list[str]:
+TEXT_PROBLEM = "A NAME HAS A CHARACTER THE GAME CANNOT SHOW."
+
+
+def text_problem(team: bytes, bases: list[bytes]) -> int | None:
+    """None when every text of the team record (its name, its coach and the
+    16 player names) is one of bases' or uses only characters the game's
+    font shows and its text entry takes; else -1 for the team's own texts
+    or the player slot. Every text of the game's own database passes."""
+    spans = [(5, 0x16, -1), (0x24, 0x3B, -1)] + [
+        (0x4C + slot * 0x26 + 3, 0x4C + slot * 0x26 + 3 + 23, slot) for slot in range(16)]
+    for start, end, slot in spans:
+        value = _text(team[start:end])
+        if all(value != _text(base[start:end]) for base in bases) and any(c not in TEXT_GLYPHS for c in value):
+            return slot
+    return None
+
+
+def validate_group(group: int, raw: bytes, original: bytes, pool: dict[bytes, bytes] | None = None,
+                   current: bytes | None = None) -> list[str]:
     """Every reason the editor or the game would refuse an edited group, as
     lines naming the team and player; [] when it is a valid override.
 
     Values of the original data outside the editors' ranges (goalkeeper
     ratings 39-40, a default tactic 12-17) are accepted while unchanged: as
-    the original record of the slot has them, or the original record of the
-    same team name in pool (a team moved by EXCHANGE or COPY TO COUNTRY)."""
+    the original record of the slot has them, the record the install's set
+    holds for the slot (current: the editor's team OK compares with the
+    record it loaded, so a user tactic chosen in the game is kept), or the
+    original record of the same team name in pool (a team moved by EXCHANGE
+    or COPY TO COUNTRY). A changed text uses only the characters the game
+    shows."""
     problems = []
     if len(raw) != len(original):
         return [f"GROUP {group}: {len(raw)} BYTES, THE ORIGINAL HAS {len(original)}"]
     teams, originals = group_teams(raw), group_teams(original)
-    for ordinal, (team, base) in enumerate(zip(teams, originals)):
+    currents: list = [None] * len(teams)
+    if current is not None and len(current) == len(original):
+        currents = group_teams(current)
+    for ordinal, (team, base, now) in enumerate(zip(teams, originals, currents)):
         if team[0] != group or team[1] != ordinal:
             problems.append(f"GROUP {group} TEAM {ordinal}: THE KEY IS {team[0]}/{team[1]}")
             continue
         if group in NATIONAL_GROUPS and team[0x19] != base[0x19]:
             problems.append(f"GROUP {group} TEAM {ordinal}: A NATIONAL TEAM KEEPS ITS DIVISION")
         moved = pool.get(team[5:0x16]) if pool is not None else None
-        result = custom_set.team_validate(team, base, moved)
+        kept = (now,) if now is not None else ()
+        result = custom_set.team_validate(team, base, moved, kept=kept)
+        if result is None:
+            slot = text_problem(team, [base, *kept] + ([moved] if moved is not None else []))
+            if slot is not None:
+                result = TEXT_PROBLEM, slot
         if result is not None:
             reason, slot = result
             where = f" PLAYER {slot + 1}" if slot >= 0 else ""
@@ -764,8 +798,11 @@ def base_identity(originals: dict[int, bytes]) -> str:
 # ---------------------------------------------------------------------------
 # Save directory
 # ---------------------------------------------------------------------------
+stored = custom_set.stored
+
+
 def read_set(directory: Path) -> tuple[Manifest | None, bytes | None]:
-    path = directory / MANIFEST_NAME
+    path = stored(directory, MANIFEST_NAME)
     if not path.exists():
         return None, None
     raw = path.read_bytes()
@@ -781,7 +818,7 @@ def set_contents(directory: Path, originals: dict[int, bytes]) -> tuple[dict[int
     if manifest is None:
         return groups, copies
     for entry in manifest.entries:
-        path = directory / entry.name
+        path = stored(directory, entry.name)
         raw = path.read_bytes() if path.exists() else None
         code, name = check_group_file(entry, raw)
         if code != MC_OK:
@@ -813,17 +850,17 @@ def decode_switch(raw: bytes) -> bool | None:
 
 
 def read_switch(directory: Path) -> bool:
-    path = directory / SWITCH_NAME
+    path = stored(directory, SWITCH_NAME)
     return bool(path.exists() and decode_switch(path.read_bytes()))
 
 
 def write_switch(directory: Path, on: bool) -> None:
     """Remembers USE EDITED DATABASE as the editor does (read back)."""
     directory.mkdir(parents=True, exist_ok=True)
-    names = {p.name for p in directory.iterdir() if p.is_file()}
+    names = {p.name.upper() for p in directory.iterdir() if p.is_file()}
     if SWITCH_NAME not in names and len(names) + 1 > SAVE_DIR_MAX_NAMES:
         raise AdmissionError(f"the save directory would hold more than {SAVE_DIR_MAX_NAMES} files")
-    _write_verified(directory / SWITCH_NAME, encode_switch(on))
+    _write_verified(stored(directory, SWITCH_NAME), encode_switch(on))
 
 
 def next_generation(names: Iterable[str], group: int, start: int = 1) -> int:
@@ -882,8 +919,8 @@ def write_plan(directory: Path, plan: SetPlan) -> Manifest | None:
     for name, raw in plan.files.items():
         _write_verified(directory / name, raw)
     if plan.backup is not None:
-        _write_verified(directory / BACKUP_NAME, plan.backup)
-    _write_verified(directory / MANIFEST_NAME, plan.raw_manifest)
+        _write_verified(stored(directory, BACKUP_NAME), plan.backup)
+    _write_verified(stored(directory, MANIFEST_NAME), plan.raw_manifest)
     return plan.manifest
 
 
@@ -905,12 +942,12 @@ def plan_set(directory: Path, originals: dict[int, bytes], groups: dict[int, byt
     full = {**originals, **groups}
     edited = {g: raw for g, raw in full.items() if raw != originals[g]}
     pool = original_pool(originals)
+    current, current_raw = read_set(directory)
+    current_groups, current_copies = set_contents(directory, originals) if current is not None else ({}, {})
     for group, raw in edited.items():
-        problems = validate_group(group, raw, originals[group], pool)
+        problems = validate_group(group, raw, originals[group], pool, current_groups.get(group))
         if problems:
             raise ValueError("; ".join(problems[:5]))
-    current, current_raw = read_set(directory)
-    _, current_copies = set_contents(directory, originals) if current is not None else ({}, {})
     if base is not None:
         kept = {code: data for code, data in cup_lists_of(current_copies, base).items()}
         copies = build_copies(base, full, {**kept, **(lists or {})})
@@ -933,7 +970,7 @@ def plan_set(directory: Path, originals: dict[int, bytes], groups: dict[int, byt
         raw = declared[group]
         old = current.entry(group) if current else None
         if old is not None and old.crc == crc32(raw) and old.length == len(raw) \
-                and (directory / old.name).exists() and (directory / old.name).read_bytes() == raw:
+                and stored(directory, old.name).exists() and stored(directory, old.name).read_bytes() == raw:
             entries.append(old)
             continue
         start = old.generation + 1 if old else 1
@@ -947,7 +984,7 @@ def plan_set(directory: Path, originals: dict[int, bytes], groups: dict[int, byt
             and manifest_version(current_raw) == MANIFEST_VERSION:
         return SetPlan(None)
     new_names = set(new_files) | {MANIFEST_NAME, BACKUP_NAME}
-    if len(set(names) | new_names) > SAVE_DIR_MAX_NAMES:
+    if len({n.upper() for n in names} | new_names) > SAVE_DIR_MAX_NAMES:
         raise AdmissionError(f"the save directory would hold more than {SAVE_DIR_MAX_NAMES} files")
     return SetPlan(manifest, new_files, current_raw, encode_manifest(manifest))
 
@@ -1266,7 +1303,7 @@ def import_csv(base: dict[int, bytes], originals: dict[int, bytes], labels: list
     pool = original_pool(originals)
     for group, raw in result.items():
         if raw != base[group]:
-            problems = validate_group(group, raw, originals[group], pool)
+            problems = validate_group(group, raw, originals[group], pool, base[group])
             if problems:
                 raise ValueError(f"{players_file if players_csv is not None else teams_file}: "
                                  + "; ".join(problems[:5]))
@@ -1350,9 +1387,12 @@ def diff(originals: dict[int, bytes], edited: dict[int, bytes], label: str = "",
     return pack
 
 
-def apply(pack: dict, originals: dict[int, bytes]) -> tuple[dict[int, bytes], str]:
+def apply(pack: dict, originals: dict[int, bytes],
+          current: dict[int, bytes] | None = None) -> tuple[dict[int, bytes], str]:
     """(groups, label) of a pack applied to the user's own original groups;
-    refused for another base, format or version; checked as an import."""
+    refused for another base, format or version; checked as an import (the
+    values a kept field may have include those of current, the groups of the
+    install's set)."""
     if not isinstance(pack, dict) or pack.get("format") != PACK_FORMAT or pack.get("version") not in PACK_VERSIONS:
         raise ValueError(f"not a {PACK_FORMAT} version 1 or 2 pack")
     if pack.get("base") != base_identity(originals):
@@ -1381,7 +1421,7 @@ def apply(pack: dict, originals: dict[int, bytes]) -> tuple[dict[int, bytes], st
     pool = original_pool(originals)
     for group, raw in result.items():
         if raw != originals[group]:
-            problems = validate_group(group, raw, originals[group], pool)
+            problems = validate_group(group, raw, originals[group], pool, (current or {}).get(group))
             if problems:
                 raise ValueError("; ".join(problems[:5]))
     return result, label
@@ -1447,7 +1487,7 @@ def read_sources(paths: list[Path], base: Base, labels: list[str], groups: dict[
         elif name.endswith(".json"):
             document = json.loads(path.read_text())
             if isinstance(document, dict) and document.get("format") == PACK_FORMAT:
-                groups, label = apply(document, base.groups)
+                groups, label = apply(document, base.groups, groups)
                 lists = {**lists, **pack_cups(document, groups)}
             else:
                 raw = team_data.encode(document)
@@ -1516,13 +1556,14 @@ def main() -> None:
                 return
             originals = _originals(args.disk2) if args.disk2 else None
             for entry in manifest.entries:
-                path = args.data / entry.name
+                path = stored(args.data, entry.name)
                 data = path.read_bytes() if path.exists() else None
                 code, name = check_group_file(entry, data)
                 if code != MC_OK:
                     parser.exit(1, f"DATABASE NOT FOUND: {problem_text(code, name)}\n")
                 if originals is not None and entry.group in SUPPORTED_GROUPS:
-                    problems = validate_group(entry.group, data, originals[entry.group], original_pool(originals))
+                    problems = validate_group(entry.group, data, originals[entry.group], original_pool(originals),
+                                              data)   # the set itself: the editors keep its values
                     if problems:
                         parser.exit(1, "\n".join(problems) + "\n")
             if originals is not None:
