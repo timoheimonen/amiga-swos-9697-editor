@@ -38,8 +38,6 @@ More: [a custom team](docs/screenshots/custom-team.png),
   emulated A1200 (68020, AGA, Kickstart 3.1, 2 MiB chip and 4 MiB fast
   memory); not tested on real hardware.
 - Python 3.9 or later (for `patch.py`); only its standard library.
-- [vasm](http://sun.hasenbraten.de/vasm/) `vasmm68k_mot` and
-  [vlink](http://sun.hasenbraten.de/vlink/) (only for `build.py`).
 - ADF images of the game's two disks with these SHA-256 hashes (the names
   are the ones these images are commonly catalogued under):
 
@@ -130,6 +128,8 @@ from.
 ```sh
 python3 build.py "Disk 1.adf"
 ```
+Requirements: [vasm](http://sun.hasenbraten.de/vasm/) `vasmm68k_mot` and
+  [vlink](http://sun.hasenbraten.de/vlink/).
 
 Assembles and links the slave and the editors and embeds them in the
 generated section of `patch.py`, so that users of `patch.py` need only
