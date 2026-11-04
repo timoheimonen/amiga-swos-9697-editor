@@ -24,7 +24,8 @@ WHDLoad ──► SWOS.slave ───────┘                       │ 
 
 The game runs as on its floppy disks: its own menus, matches, file system
 and saves. The slave replaces only the layer that talks to the floppy drives
-and the save disk; the editors add entries, actions and screens to the
+and the save disk, and skips the picture that asks for the game's old disk 1;
+the editors add entries, actions and screens to the
 game's own menus and work on the game's own data in memory.
 
 ## The slave (`whdload/`)
@@ -72,6 +73,7 @@ would still see as held released afterwards).
 | `$1804AC` the save disk's format check | accepted for the save directory |
 | `$1805C0` the file system's driver call | drive 2 (the save disk) from `data/`; the game disks continue in the game's own file system |
 | `$180E7E` the physical disk layer | sectors of `Disk.1` and `Disk.2` with `resload_DiskLoad`; writes refused |
+| `$18E7B6` the picture of the old disk 1 after the intro | skipped, with the wait for that disk; the game's disk check after it stays |
 
 So the game's own file system reads its files from the unchanged disk
 images, and the save disk is a directory: saves, loads, deletes and the

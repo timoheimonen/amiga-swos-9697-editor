@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.91b
+; SWOS 96-97 In-Game Editors V0.92b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -35,6 +35,12 @@ SWOS2_FAST_REGIONS      equ 0
 game_frontend_startup   equ $18E6FE     ; one-time front-end start-up
 startup_cache_init_call equ $18E78C     ; six-byte JSR cache_initialize
 startup_cache_init_return equ $18E792   ; instruction after that JSR
+; After the intro the start-up shows grafs/olddisk1.raw, keeps grafs/disk22.raw
+; ready for its own request, fades in and waits 50 fields at a time for the
+; old-disk marker; then comes the disk check of startup_old_disk_check. The
+; screen is faded out when this block starts.
+startup_old_disk_picture equ $18E7B6    ; six-byte LEA of the picture's name
+startup_old_disk_check  equ $18E80C     ; JSR of the check after the block
 startup_preload_call    equ $18E880     ; six-byte JSR startup_preload_resources
 startup_preload_return  equ $18E886     ; instruction after that JSR
 ; One-time preload of the main-menu resources and its filename table. Called
