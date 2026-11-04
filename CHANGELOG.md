@@ -1,5 +1,12 @@
 # Changelog
 
+## V0.92b 04-11-2026
+
+A small update.
+
+- The game no longer shows its picture of the old disk 1 for a second after
+  the intro. The disks are always there, so nothing waits for that disk.
+
 ## V0.91b 16-10-2026
 
 Fixes for edge cases.

@@ -13,6 +13,7 @@ tables check the CRC-32 of every site first and write nothing unless all match.
 | `$1804AC` | 6 | Entry of the check before FORMAT SAVE DISK (refuses game disks in DF0) | `JMP` to the slave: the save directory on drive 2 is selected and accepted |
 | `$1805C0` | 6 | Entry of the file-system dispatcher (read, write, delete, list, format, open, close, read, seek) | `JMP` to the slave: operations on drive 2 work on `data/`; all others continue in the game at `$1805C6` |
 | `$180E7E` | 70 | Entry of the physical disk layer (the only code that drives the floppy hardware) | `JMP` to the slave's disk layer (sector reads from `Disk.1`/`Disk.2`, writes refused), followed by the slave block |
+| `$18E7B6` | 6 | Start of the block after the intro that shows the picture of the old disk 1, fades in and waits for that disk | `BRA.W` past the block to the game's disk check at `$18E80C`, on a screen already faded out: no picture of a disk appears |
 
 ## Slave block at `$180E84`
 

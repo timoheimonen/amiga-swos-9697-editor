@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.91b
+; SWOS 96-97 In-Game Editors V0.92b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -12,9 +12,10 @@
 ;     byte, without carry into the next byte.
 ;  3. Apply the base patch table, all or nothing: the game's physical disk
 ;     layer, the drive search and the format check come into the slave
-;     (disk_service.s), and the save disk becomes the directory data/ of the
-;     install (file_service.s). Any difference at a patch site quits through
-;     WHDLoad with a message.
+;     (disk_service.s), the save disk becomes the directory data/ of the
+;     install (file_service.s), and the start-up goes past the game's picture
+;     of its old disk 1. Any difference at a patch site quits through WHDLoad
+;     with a message.
 ;  4. Load the editor file into the expansion memory, check it, relocate it,
 ;     call its init and install its runtime hook table, all or nothing. Any
 ;     failure leaves the game without editor hooks.
@@ -111,7 +112,7 @@ base:
 
 name:   dc.b    "Sensible World of Soccer '96-'97",0
 copy:   dc.b    "1996 Sensible Software / Renegade",0
-info:   dc.b    "In-Game Editors V0.91b",10
+info:   dc.b    "In-Game Editors V0.92b",10
         dc.b    "by Timo Heimonen",0
         even
 
@@ -694,6 +695,14 @@ slave_block_template:
         dc.l    0                       ; SB_SLAVE (fixup: the slave base)
         dcb.b   SB_SIZE-SB_EXPMEM,0
 slave_block_template_end:
+
+; startup_old_disk_picture: past the picture of the old disk 1 and the wait
+; for that disk, to the game's disk check.
+        cnop    0,2
+startup_skip_template:
+        dc.w    $6000                   ; BRA.W startup_old_disk_check
+        dc.w    startup_old_disk_check-(startup_old_disk_picture+2)
+        dc.w    $4E71                   ; NOP
 
 ; The base patch table, generated from the manifest; it stays the last part
 ; of the slave so that its size alone moves nothing before it.

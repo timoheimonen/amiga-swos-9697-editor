@@ -32,7 +32,8 @@ F10 quits.
   own small OFS reader, unpacks them with `resload_Decrunch`, checks their
   CRC-32, relocates the executable to `$180000` as the game's loader does and
   applies its base patch table. Any difference from the supported release quits
-  through WHDLoad with a message.
+  through WHDLoad with a message. After the intro the game no longer shows its
+  picture of the old disk 1: the disks are always there.
 - **Game disks.** The game's own file system reads its files from the disk
   images; only its physical disk layer is replaced by `resload_DiskLoad`.
   Writes to the game disks are refused.

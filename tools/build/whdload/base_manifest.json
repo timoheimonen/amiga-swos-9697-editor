@@ -49,6 +49,18 @@
           22
         ]
       }
+    },
+    {
+      "name": "startup_old_disk_picture",
+      "table": "base",
+      "address": "0x18E7B6",
+      "length": 6,
+      "expected_sha256": "c4e8d8614a46c11b0a8836d173679f85ceb0ca4bc6d66076961b9b87460dbc68",
+      "replacement": {
+        "template": "startup_skip_template",
+        "image": "slave",
+        "fixups": []
+      }
     }
   ]
 }
