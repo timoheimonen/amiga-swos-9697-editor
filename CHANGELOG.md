@@ -1,5 +1,24 @@
 # Changelog
 
+## V0.93b 10-11-2026
+
+Easier editing.
+
+- Your user tactics are kept: a tactic you save in EDIT TACTICS or load with
+  a definition is written to `TACTICS.CFG` in the save directory and is back
+  in its slot at the next start and in every new competition. `patch.py`
+  checks, lists, exports and imports the file.
+- `patch.py import`, `db import` and `db apply` take `--dry-run`: they check
+  everything and list what would change, and write nothing.
+- The player screen has PREVIOUS PLAYER and NEXT PLAYER, the keys 0-7 type
+  a skill, and Fire on NATIONALITY opens a list of all labels.
+- Name fields have a cursor: LEFT and RIGHT move it, characters go in and
+  are deleted at it.
+- A group of EDIT DATABASE has a column heading and a SHOW button that
+  lists one division at a time; Fire on the chosen club opens it.
+- The highlight stays where it was when a screen is drawn again, and
+  CANCEL or Esc asks before it discards changes.
+
 ## V0.92b 04-11-2026
 
 A small update.

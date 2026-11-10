@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.92b
+; SWOS 96-97 In-Game Editors V0.93b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -33,7 +33,7 @@
         xref    editor_base, editor_image
         xref    screen_run
         xref    dialog_open, dialog_poll, dialog_set, dialog_draw
-        xref    field_start, field_key
+        xref    field_start, field_key, field_shown
         xref    message_title, message_line, message_lines
         xref    message_open, message_poll, message_storage_reason
         xref    definition_capture_check, definition_check, definition_check_file
@@ -685,14 +685,13 @@ build_labels:
         lea     DF_LINES+LINE_NAME*DF_LINE_SIZE(a4),a1
         lea     name_label(pc),a0
         bsr.l   text_copy
-        lea     DF_BASE(a4),a0
-        bsr.l   text_copy
         cmpi.w  #DFM_TYPING,DF_MODE(a4)
         bne.s   .suffix
-        move.b  #'_',(a1)+
-        clr.b   (a1)
+        bsr.l   field_shown
         bra.s   .teams
 .suffix:
+        lea     DF_BASE(a4),a0
+        bsr.l   text_copy
         lea     suffix_text(pc),a0
         bsr.l   text_copy
 .teams:

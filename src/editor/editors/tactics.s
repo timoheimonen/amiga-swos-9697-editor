@@ -1,16 +1,16 @@
-; SWOS 96-97 In-Game Editors V0.92b
+; SWOS 96-97 In-Game Editors V0.93b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
-; Tactics: the checks of a tactic record, the user-owned tactic slots and
-; the editor's part of EDIT TACTICS. The native slot chooser, pitch and
-; controls stay as they are; runtime hooks add:
+; Tactics: the checks of a tactic record, the user-owned tactic slots, the
+; file that keeps them and the editor's part of EDIT TACTICS. The native
+; slot chooser, pitch and controls stay as they are; runtime hooks add:
 ;
 ;   tactics_save_exit     SAVE/EXIT: a changed working tactic is checked
 ;                         before the native commit; a refused one stays in
 ;                         the editor with a message naming the problem.
-;                         After a commit the slot is user-owned and its
-;                         record is copied.
+;                         An accepted one is written to TACTICS.CFG, then
+;                         committed: the slot is user-owned and kept.
 ;   tactics_load_file     the read of a .TAC file (LOAD in the IMPORT
 ;                         chooser): the length is queried first, exactly
 ;                         TACTIC_SIZE bytes are read into the editor's I/O
@@ -22,26 +22,38 @@
 ;                         body bytes of the chosen record; the native copy
 ;                         moves nine more, over the editor's UNDO copy.
 ;   tactics_family_reset  a new competition resets the six user slots; then
-;                         the user-owned slots are restored from their
-;                         copies, the role order is rebuilt and the teams
-;                         using them are marked for a rebuild.
+;                         the kept tactics are put back from their copies,
+;                         the role order is rebuilt and the teams using
+;                         them are marked for a rebuild.
 ;   tactics_competition_loaded  a competition save has been loaded: its own
-;                         six slots replace the user's, so no slot stays
-;                         user-owned.
+;                         six slots replace the user's, so no slot is
+;                         user-owned while they are there.
 ;   storage_volume_ready  (resident/storage.s) the save-disk requests of the
 ;                         .TAC save and load.
 ;
 ; A slot becomes user-owned when the user commits it in EDIT TACTICS (a
 ; pitch edit, COPY, IMPORT or a loaded .TAC, then SAVE/EXIT) or when
-; tactics_install puts a record into it, and stays so until a competition
-; save is loaded. Ownership and copies live in the working data only.
+; tactics_install puts a record into it. From then on its tactic is kept:
+; a copy of it is part of the image of TACTICS.CFG in the working data
+; (tactic.i), which is written to the save directory whenever a kept tactic
+; changes. tactics_start reads the file at the first main menu and puts the
+; kept tactics into their slots, so they are there after every start, and
+; a new competition puts them back. A loaded competition save shows its own
+; six tactics instead until the next new competition; the kept ones stay
+; in the file. A file that is missing, or not a sound TACTICS.CFG, leaves
+; the game's own slots as they are; it is replaced at the next write.
 ;
 ; For the other editors:
 ;   tactic_check          checks a record
 ;   tactic_problem_text   the problem a check found, as one line of text
 ;   tactics_owned         the user-owned slots
 ;   tactics_install       installs a checked record in a user slot as
-;                         user-owned, with the native refresh
+;                         user-owned and kept, with the native refresh
+;   tactics_keep          writes TACTICS.CFG when a kept tactic has changed
+;                         since the last write, with a note when it fails
+;   tactics_slot_note     the note of a team whose default tactic is a
+;                         user slot
+;   tactics_start         once, at the first main menu
 ;
 ; Native action contract: the menu tick saves D0-D7/A0-A6 around an action
 ; and passes A5 = the selected expanded entry.
@@ -53,13 +65,16 @@
         include "work.i"
 
         xdef    tactic_check, tactic_problem_text, tactics_owned, tactics_install
+        xdef    tactics_start, tactics_keep, tactics_slot_note
         xdef    tactics_save_exit, tactics_load_file, tactics_save_file
         xdef    tactics_family_reset, tactics_competition_loaded
         xdef    tactic_import_count_patch
         xref    editor_base
+        xref    crc32_buffer
         xref    db_family_reset, boundary_family_started
         xref    storage_size, storage_read, storage_write, storage_native_result
         xref    message_title, message_line, message_lines, message_show
+        xref    message_storage_reason
         xref    text_copy, text_decimal
 
         section .text,code
@@ -300,10 +315,12 @@ tactics_owned:
 
 ; ---------------------------------------------------------------------------
 ; tactics_install: A0 = tactic record, D0.w = user slot 0-5.
-;   out: D0.l = TC_OK when the record is in the slot, user-owned and
-;        refreshed (role order, teams using it); otherwise the result of
-;        tactic_check and nothing changed (or -1 for a slot outside 0-5).
-;        Flags are set from D0.
+;   out: D0.l = TC_OK when the record is in the slot, user-owned, kept
+;        and refreshed (role order, teams using it); otherwise the result
+;        of tactic_check and nothing changed (or -1 for a slot outside
+;        0-5). Flags are set from D0. The caller writes the file
+;        (tactics_keep) once it has installed its records and no screen
+;        runs.
 ; ---------------------------------------------------------------------------
 tactics_install:
         movem.l d1-d7/a0-a6,-(sp)
@@ -322,7 +339,7 @@ tactics_install:
         bsr.w   copy_record             ; into the slot
         movea.l a2,a0
         movea.l a3,a1
-        bsr.w   copy_record             ; into the copy
+        bsr.w   keep_record             ; into the copy
         bset    d6,WORK_TACTICS+TT_OWNED+1(a5) ; slots 0-5: the low byte
         moveq   #0,d7
         bset    d6,d7
@@ -336,7 +353,8 @@ tactics_install:
 ; ---------------------------------------------------------------------------
 ; tactics_save_exit: action of SAVE/EXIT (tactic_save_exit_operand). A
 ; changed working tactic must pass tactic_check before the native SAVE/EXIT
-; commits it; after a commit the slot is user-owned.
+; commits it. An accepted one is kept first (TACTICS.CFG written, with a
+; note when that fails); after the commit the slot is user-owned.
 ; ---------------------------------------------------------------------------
 tactics_save_exit:
         move.l  a5,-(sp)                ; the selected entry
@@ -345,7 +363,7 @@ tactics_save_exit:
         beq.s   .native
         lea     tactic_work_buffer,a0
         bsr.w   check_and_record
-        beq.s   .native
+        beq.s   .keep
         lea     title_refused(pc),a0
         moveq   #0,d0
         bsr.w   problem_message
@@ -355,6 +373,16 @@ tactics_save_exit:
         bsr.l   message_show
         movea.l (sp)+,a5
         rts
+.keep:
+        move.w  tactic_editor_slot,d0
+        subi.w  #TACTIC_USER_FIRST,d0
+        cmpi.w  #USER_TACTIC_SLOTS,d0
+        bcc.s   .native
+        bsr.w   slot_addresses          ; A0 = copy
+        movea.l a0,a1
+        lea     tactic_work_buffer,a0
+        bsr.w   keep_record
+        bsr.w   tactics_keep            ; its note is shown here, in the editor
 .native:
         movea.l (sp)+,a5
         move.w  tactic_editor_dirty,-(sp)
@@ -372,16 +400,185 @@ tactics_save_exit:
 .done:
         rts
 
-; own_slot: D0.w = user slot 0-5. Copies the slot and marks it user-owned.
-; Preserves all registers.
+; own_slot: D0.w = user slot 0-5, committed. Marks it user-owned; its copy
+; is the record that was kept before the commit, and a slot that differs
+; from it is kept again. Preserves all registers.
 own_slot:
         movem.l d0-d1/a0-a1,-(sp)
         move.w  d0,d1
         bsr.w   slot_addresses          ; A0 = copy, A1 = slot
         exg     a0,a1
-        bsr.w   copy_record
+        bsr.w   keep_record
         bset    d1,WORK_TACTICS+TT_OWNED+1(a5) ; slots 0-5: the low byte
+        bsr.w   keep_write              ; nothing when the copy was the same
         movem.l (sp)+,d0-d1/a0-a1
+        rts
+
+; keep_record: A0 = record, A1 = the copy of user slot D0.w (0-5). The copy
+; becomes the record and the slot is kept; TT_UNSAVED when that changed the
+; image. Preserves all registers.
+keep_record:
+        movem.l d1/a0-a1,-(sp)
+        bset    d0,WORK_TACTICS+TT_KEPT+1(a5) ; slots 0-5: the low byte
+        beq.s   .changed
+        move.w  #TACTIC_SIZE/2-1,d1
+.compare:
+        cmpm.w  (a0)+,(a1)+
+        dbne    d1,.compare
+        beq.s   .done
+        movem.l (sp),d1/a0-a1
+.changed:
+        bsr.w   copy_record
+        move.w  #1,WORK_TACTICS+TT_UNSAVED(a5)
+.done:
+        movem.l (sp)+,d1/a0-a1
+        rts
+
+; ---------------------------------------------------------------------------
+; tactics_keep: writes TACTICS.CFG when the image has changed since the
+; last write. A failed write shows one note (from a native menu action;
+; nothing is shown while an editor screen runs) and is tried again at the
+; next call. Preserves all registers.
+; ---------------------------------------------------------------------------
+tactics_keep:
+        movem.l d0-d7/a0-a6,-(sp)
+        movea.l editor_base,a5
+        bsr.w   keep_write
+        beq.s   .done
+        lea     title_not_kept(pc),a0
+        bsr.l   message_title
+        lea     not_kept_line(pc),a0
+        moveq   #0,d0
+        bsr.l   message_line
+        lea     WORK_TACTICS+TT_LINE(a5),a1
+        lea     reason_prefix(pc),a0
+        bsr.l   text_copy
+        move.l  WORK_TACTICS+TT_RESULT(a5),d0
+        moveq   #1,d1                   ; a write
+        bsr.l   message_storage_reason  ; A0 = reason
+        bsr.l   text_copy
+        move.b  #'.',(a1)+
+        clr.b   (a1)
+        lea     WORK_TACTICS+TT_LINE(a5),a0
+        moveq   #1,d0
+        bsr.l   message_line
+        lea     not_kept_lines(pc),a0
+        moveq   #2,d0
+        bsr.l   message_lines
+        bsr.l   message_show
+.done:
+        movem.l (sp)+,d0-d7/a0-a6
+        rts
+
+; keep_write: A5 = editor base. Writes the image as TACTICS.CFG when
+; TT_UNSAVED: the header, the CRC-32, then the file, read back by the
+; slave. D0.l = 0, or the result of the write (TT_RESULT; TT_UNSAVED
+; stays); flags set from it. Preserves all other registers.
+keep_write:
+        movem.l d1-d2/a0-a2,-(sp)
+        moveq   #0,d0
+        lea     WORK_TACTICS(a5),a2
+        tst.w   TT_UNSAVED(a2)
+        beq.s   .done
+        move.l  #TF_MAGIC_HIGH,TT_FILE+TF_MAGIC(a2)
+        move.l  #TF_MAGIC_LOW,TT_FILE+TF_MAGIC+4(a2)
+        move.w  #TF_VERSION_VALUE,TT_FILE+TF_VERSION(a2)
+        lea     TT_FILE(a2),a0
+        move.l  #TF_CRC32,d1
+        bsr.l   crc32_buffer
+        move.l  d0,TT_FILE+TF_CRC32(a2)
+        lea     kept_name(pc),a0
+        lea     TT_FILE(a2),a1
+        move.l  #TF_SIZE,d1
+        bsr.l   storage_write
+        move.l  d0,TT_RESULT(a2)
+        bne.s   .done
+        clr.w   TT_UNSAVED(a2)
+.done:
+        movem.l (sp)+,d1-d2/a0-a2
+        tst.l   d0
+        rts
+
+; ---------------------------------------------------------------------------
+; tactics_slot_note: D0.w = user slot. D0.l = the note for a team whose
+; default tactic is that slot, or 0 when there is nothing to say: the slot
+; holds the user's tactic and TACTICS.CFG keeps it. Flags set from D0.
+; ---------------------------------------------------------------------------
+tactics_slot_note:
+        movem.l a0-a1,-(sp)
+        suba.l  a0,a0
+        cmpi.w  #USER_TACTIC_SLOTS,d0
+        bcc.s   .done
+        movea.l editor_base,a1
+        lea     note_not_owned(pc),a0
+        btst    d0,WORK_TACTICS+TT_OWNED+1(a1) ; slots 0-5: the low byte
+        beq.s   .done
+        lea     note_unsaved(pc),a0
+        tst.w   WORK_TACTICS+TT_UNSAVED(a1)
+        bne.s   .done
+        suba.l  a0,a0
+.done:
+        move.l  a0,d0
+        movem.l (sp)+,a0-a1
+        rts
+
+; ---------------------------------------------------------------------------
+; tactics_start: A5 = editor base. Once, at the first main menu: a sound
+; TACTICS.CFG becomes the image and its kept tactics go into their slots,
+; user-owned. The file is sound when its length, magic, version, kept bits
+; and CRC-32 agree and every kept record passes tactic_check; anything
+; else, and a missing file, changes nothing. Preserves all registers.
+; ---------------------------------------------------------------------------
+tactics_start:
+        movem.l d0-d7/a0-a6,-(sp)
+        lea     WORK_TACTICS(a5),a4
+        tst.w   TT_STATE(a4)
+        bne.w   .done
+        move.w  #1,TT_STATE(a4)
+        lea     kept_name(pc),a0
+        lea     WORK_IO_BUFFER(a5),a1
+        move.l  #TF_SIZE,d1
+        bsr.l   storage_read            ; D1 = length; a longer file is not read
+        bne.w   .done
+        cmpi.l  #TF_SIZE,d1
+        bne.w   .done
+        lea     WORK_IO_BUFFER(a5),a2
+        cmpi.l  #TF_MAGIC_HIGH,TF_MAGIC(a2)
+        bne.w   .done
+        cmpi.l  #TF_MAGIC_LOW,TF_MAGIC+4(a2)
+        bne.w   .done
+        cmpi.w  #TF_VERSION_VALUE,TF_VERSION(a2)
+        bne.w   .done
+        move.w  TF_KEPT(a2),d7
+        cmpi.w  #1<<USER_TACTIC_SLOTS,d7
+        bcc.s   .done
+        movea.l a2,a0
+        move.l  #TF_CRC32,d1
+        bsr.l   crc32_buffer
+        cmp.l   TF_CRC32(a2),d0
+        bne.w   .done
+        moveq   #0,d6
+.check:
+        btst    d6,d7
+        beq.s   .checked
+        move.w  d6,d0
+        mulu.w  #TACTIC_SIZE,d0
+        lea     TF_RECORDS(a2,d0.l),a0
+        bsr.w   tactic_check            ; changes D1-D3
+        bne.s   .done
+.checked:
+        addq.w  #1,d6
+        cmpi.w  #USER_TACTIC_SLOTS,d6
+        bcs.s   .check
+        movea.l a2,a0
+        lea     TT_FILE(a4),a1
+        move.w  #TF_SIZE/2-1,d0
+.image:
+        move.w  (a0)+,(a1)+
+        dbf     d0,.image
+        bsr.w   restore_kept
+.done:
+        movem.l (sp)+,d0-d7/a0-a6
         rts
 
 ; ---------------------------------------------------------------------------
@@ -480,7 +677,7 @@ tactics_save_file:
 ; tactic_slots_reset and RTS, family_reset_tactic_call). The binding of the
 ; new family to the database (db_family_reset), the notes of the new family
 ; (boundary_family_started), the native reset of the six user slots, then
-; every user-owned slot back from its copy.
+; every kept tactic back from its copy.
 ; ---------------------------------------------------------------------------
 tactics_family_reset:
         bsr.l   db_family_reset         ; the binding of the new family
@@ -488,7 +685,16 @@ tactics_family_reset:
         jsr     tactic_slots_reset
         movem.l d0-d7/a0-a6,-(sp)
         movea.l editor_base,a5
-        move.w  WORK_TACTICS+TT_OWNED(a5),d7
+        bsr.s   restore_kept
+        movem.l (sp)+,d0-d7/a0-a6
+        rts
+
+; restore_kept: A5 = editor base. Every kept tactic goes from its copy into
+; its slot, with the native refresh; exactly those slots are user-owned.
+; Changes D0/D6-D7/A0-A1.
+restore_kept:
+        move.w  WORK_TACTICS+TT_KEPT(a5),d7
+        move.w  d7,WORK_TACTICS+TT_OWNED(a5)
         beq.s   .done
         moveq   #0,d6
 .slot:
@@ -503,13 +709,13 @@ tactics_family_reset:
         bcs.s   .slot
         bsr.w   refresh_slots
 .done:
-        movem.l (sp)+,d0-d7/a0-a6
         rts
 
 ; ---------------------------------------------------------------------------
 ; tactics_competition_loaded: replaces JSR competition_load_finish after a
 ; competition save has been loaded (diy_loaded_call, preset_loaded_call,
-; season_loaded_call). The save's slots are not the user's.
+; season_loaded_call). The save's slots are not the user's; the kept
+; tactics stay in their copies and in the file.
 ; ---------------------------------------------------------------------------
 tactics_competition_loaded:
         bsr.l   boundary_family_started
@@ -608,6 +814,15 @@ tactic_import_count_patch:
 title_refused:          dc.b    'TACTIC NOT ACCEPTED',0
 title_damaged:          dc.b    'FILE DAMAGED',0
 title_not_saved:        dc.b    'TACTIC NOT SAVED',0
+title_not_kept:         dc.b    'TACTICS NOT KEPT',0
+not_kept_line:          dc.b    'TACTICS.CFG COULD NOT BE WRITTEN',0
+reason_prefix:          dc.b    'IN THE DIRECTORY DATA: ',0
+not_kept_lines:         dc.b    'THE TACTIC IS USED AS USUAL. AFTER A RESTART',0
+                        dc.b    'IT MUST BE LOADED FROM A .TAC FILE AGAIN.',0
+                        dc.b    0
+note_not_owned:         dc.b    'THIS SLOT HOLDS NO TACTIC OF YOURS (EDIT TACTICS)',0
+note_unsaved:           dc.b    'NOT IN TACTICS.CFG: LOAD THE .TAC AFTER A RESTART',0
+kept_name:              TACTICS_FILE_NAME
 refused_lines:          dc.b    'THE SLOT KEEPS ITS PREVIOUS TACTIC.',0
                         dc.b    'CHANGE IT, OR USE UNDO, IMPORT OR ABORT.',0
                         dc.b    0

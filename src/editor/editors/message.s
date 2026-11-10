@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.92b
+; SWOS 96-97 In-Game Editors V0.93b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -19,7 +19,7 @@
 ;   - inside an editor screen: message_open (D0.w = MSG_OK or MSG_ASK)
 ;     replaces the screen's dialog, and message_poll (D7.w events, D6.w key)
 ;     returns D0.l = -1 while it is open, else the answer; the screen then
-;     draws its own dialog again.
+;     draws its own dialog again, which gets its focus back.
 ; message_title, message_line, message_lines, message_note and message_show
 ; preserve every register; message_ask, message_open (0) and message_poll
 ; (flags set from it) return D0.l; message_storage_reason returns A0.
@@ -36,7 +36,7 @@
         xdef    message_show, message_ask, message_open, message_poll
         xdef    message_storage_reason
         xdef    ok_text, cancel_text, previous_text, next_text, back_text
-        xref    dialog_open, dialog_poll
+        xref    dialog_open_modal, dialog_poll
         xref    screen_run
         xref    editor_base, editor_image
         xref    text_copy_max
@@ -167,7 +167,7 @@ message_open:
         lea     ask_dialog(pc),a0
 .open:
         moveq   #0,d2
-        bsr.l   dialog_open
+        bsr.l   dialog_open_modal       ; the screen's dialog keeps its focus
         movem.l (sp)+,d2/a0
         moveq   #0,d0
         rts

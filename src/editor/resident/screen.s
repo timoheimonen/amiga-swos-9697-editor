@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.92b
+; SWOS 96-97 In-Game Editors V0.93b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -54,6 +54,8 @@ screen_run:
         move.w  WORK_SCREEN+SCR_OPENED(a5),-(sp)
         move.l  a0,WORK_SCREEN+SCR_RECORD(a5)
         clr.w   WORK_SCREEN+SCR_OPENED(a5)
+        move.w  #1,WORK_DIALOG+DLG_FRESH(a5) ; its first dialog opens at its default
+        clr.l   WORK_DIALOG+DLG_KEPT_DESCRIPTOR(a5)
         move.w  #1,menu_release_gate
         lea     screen_host(pc),a6
         jsr     menu_run_modal

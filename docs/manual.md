@@ -84,8 +84,14 @@ settings, the player screen, the database screens, the definition screens
 and every message) use the same controls: the joystick or the cursor keys
 move the highlight between buttons and rows, Fire or Return chooses, Esc
 cancels or goes back, and buttons with a letter in brackets react to that
-key. Names are typed on the keyboard; only the characters the game's font
-can show are accepted.
+key. The highlight stays where it was when a screen is drawn again, and
+when a list reaches its end it moves to the button that still works.
+
+Names are typed on the keyboard; only the characters the game's font can
+show are accepted. The field has a cursor (`_`): LEFT and RIGHT move it,
+UP and DOWN take it to the start and the end, a character is put in at the
+cursor and Backspace deletes the one before it. Return keeps the text, Esc
+restores the previous one.
 
 ## 2. The main menu
 
@@ -130,9 +136,9 @@ change it, or use UNDO to restore the team. The checks are:
 
 - **Tactic**: the default tactic of the team, one of the twelve builtin
   tactics, or one of the six user tactics USER A-F (shown by name). A user
-  tactic is offered when you loaded or edited it in this session, or when
-  the team's own data names it; after a restart load the same `.TAC` into
-  that slot again.
+  tactic is offered when its slot holds a tactic of yours (see chapter 4),
+  or when the team's own data names it; a note says so when the slot holds
+  none.
 - **Lineup**: one row per role, 1-11 the starters and 12S-16S the
   substitutes, with shirt number, position and name. SWAP PLACES swaps two
   players (Fire on both), SWAP NUMBERS swaps two shirt numbers.
@@ -143,15 +149,18 @@ change it, or use UNDO to restore the team. The checks are:
   information only; the editors enforce no house rules.
 
 OK keeps the changes, CANCEL (or Esc) restores the team as it was when the
-screen opened. OK is refused while role 1 is not a goalkeeper.
+screen opened and asks first when something was changed. OK is refused
+while role 1 is not a goalkeeper.
 
 ### The player screen
 
-NAME (up to 22 characters), NATIONALITY (the game's three-letter labels),
-SHIRT NUMBER (swapped with the player who has it), POSITION (G, RB, LB, D,
-RW, LW, M, A), APPEARANCE, the seven skills 0-7 (LEFT/RIGHT; Fire marks the
-skill's specialty `*`) and, for a goalkeeper, his rating 0-38 instead of
-the skills. The line `RATING n VALUE x` shows the rating and the price the
+NAME (up to 22 characters), NATIONALITY (the game's three-letter labels:
+LEFT/RIGHT steps through them, Fire opens the list of all 153, 30 to a
+page, where Fire chooses and Esc changes nothing), SHIRT NUMBER (swapped
+with the player who has it), POSITION (G, RB, LB, D, RW, LW, M, A),
+APPEARANCE, the seven skills 0-7 (LEFT/RIGHT or the keys 0-7; Fire marks
+the skill's specialty `*`) and, for a goalkeeper, his rating 0-38 instead
+of the skills. The line `RATING n VALUE x` shows the rating and the price the
 game works out from it; Fire on it explains that a value cannot be set.
 
 Changing a player into a goalkeeper or back converts his skills and rating
@@ -163,7 +172,12 @@ gives the shown player the clipboard's name, nationality, position,
 appearance, skills, specialty flags and rating, and keeps his shirt number.
 The clipboard works between teams, in the custom set and in the edited
 database, until the game is quit. OK keeps the changes for the team page;
-CANCEL restores the player.
+CANCEL (or Esc) restores the player and asks first when something was
+changed.
+
+**PREVIOUS PLAYER** and **NEXT PLAYER** keep the changes as OK does and
+show the neighbouring player of the team, so a whole squad can be edited
+without going back to the team page.
 
 ### Saving
 
@@ -204,10 +218,16 @@ refused with a message that names the player, the ball zone or the pair:
 IMPORT copies a tactic's positions into the working tactic and keeps its
 name.
 
-A user tactic you loaded or edited in this session stays in its slot when a
-new competition starts (natively the game would reset all six slots); a
-tactic that came from a loaded competition save is reset as in the
-original game.
+A user tactic you loaded, edited or took from a definition is yours: it
+is kept in the file `TACTICS.CFG` of the save directory, written when you
+leave EDIT TACTICS with SAVE/EXIT or load the definition. Your tactics are
+back in their slots when the game starts and whenever a new competition
+starts (natively the game would reset all six slots, and a loaded
+competition save puts its own tactics there while it is played). If the
+file cannot be written, `TACTICS NOT KEPT` says why; the tactic is used as
+usual until the game is quit, and can be loaded from its `.TAC` file
+later. `patch.py list` shows the kept tactics, and `export` and `import`
+carry them between installs as `TACTICS.CFG.json`.
 
 ## 5. Tournament definitions
 
@@ -307,8 +327,12 @@ in the backup.
 
 ### A group
 
-Choosing a group opens its clubs (or national teams) with their divisions:
+Choosing a group opens its clubs (or national teams), 24 to a page, under
+the heading `DIV CLUB`: each club with its division. Fire on a club
+chooses it, and Fire on the chosen club opens it as EDIT TEAM does.
 
+- **SHOW: ALL / DIV n**: every club, or the clubs of one division at a
+  time (each press shows the next division, then all again).
 - **EDIT TEAM**: the team page, the team settings and the player screens of
   chapter 3, for the chosen club. IMPORT is not offered here; use COPY TO
   COUNTRY or EXCHANGE.
@@ -400,19 +424,23 @@ file is ever deleted. Run them while the game is not running.
 | Command | What it does |
 |---|---|
 | `python3 patch.py install "Disk 1.adf" "Disk 2.adf" --output SWOS [--machine NAME] [--set FILE ...] [--label TEXT]` | A new install; with `--set`, an edited database (a season pack, CSV or group JSON files) in use from the start |
-| `python3 patch.py list SWOS [--json]` | What the save directory holds: the machine, the custom set, the edited database, tactics, definitions (with their backups), saves with their databases, the match log, other files, with every fingerprint |
-| `python3 patch.py check FILE ...` | Checks `.TAC`, `.DEF` (and `NAME.DEF.BAK`), `CUSTOMS.EDT`, `DBASE.CFG`, link files, `MATCHES.LOG` and `MACHINE.CFG` as the game and the editors do |
-| `python3 patch.py export SWOS OUT` | The custom set as JSON and CSV, the tactics and definitions as JSON, the edited database's groups as JSON, and saves, links and the manifest as JSON for reading only |
-| `python3 patch.py import SWOS FILE ... [--replace]` | JSON and CSV files of export, `.TAC` and `.DEF` files into the save directory, checked as the editors check them; a definition replaced is kept as `NAME.DEF.BAK` |
+| `python3 patch.py list SWOS [--json]` | What the save directory holds: the machine, the custom set, the edited database, tactics, the kept user tactics, definitions (with their backups), saves with their databases, the match log, other files, with every fingerprint |
+| `python3 patch.py check FILE ...` | Checks `.TAC`, `.DEF` (and `NAME.DEF.BAK`), `CUSTOMS.EDT`, `DBASE.CFG`, `TACTICS.CFG`, link files, `MATCHES.LOG` and `MACHINE.CFG` as the game and the editors do |
+| `python3 patch.py export SWOS OUT` | The custom set as JSON and CSV, the tactics, the kept user tactics and definitions as JSON, the edited database's groups as JSON, and saves, links and the manifest as JSON for reading only |
+| `python3 patch.py import SWOS FILE ... [--replace] [--dry-run]` | JSON and CSV files of export, `.TAC` and `.DEF` files into the save directory, checked as the editors check them; a definition replaced is kept as `NAME.DEF.BAK` |
 | `python3 patch.py db export SWOS OUT` | Every database group as JSON, `players.csv`, `teams.csv` (with the strength columns) and `cups.csv` |
-| `python3 patch.py db import SWOS FILE ... [--label TEXT]` | CSV, group JSON or a season pack into a new version of the edited set |
+| `python3 patch.py db import SWOS FILE ... [--label TEXT] [--dry-run]` | CSV, group JSON or a season pack into a new version of the edited set |
 | `python3 patch.py db diff SWOS PACK.json [--label TEXT]` | A season pack: only the fields that differ from the original database |
-| `python3 patch.py db apply SWOS PACK.json` | A season pack into a new version of the set |
+| `python3 patch.py db apply SWOS PACK.json [--dry-run]` | A season pack into a new version of the set |
 | `python3 patch.py db check SWOS` | Checks the set as the editors do |
 | `python3 patch.py db switch SWOS on\|off` | USE EDITED DATABASE at the next start (on only for a set whose files are all there and sound) |
 | `python3 patch.py report SWOS_OR_SAVES ... --output OUT` | Standings, cup results and scorers of `.DIY`, `.PRE` and `.SEA` saves as CSV and Markdown |
 | `python3 patch.py results SWOS_OR_LOGS ... --output OUT [--def FILE] [--teams LIST]` | The match logs of several installs as one table: matches, standings and scorers |
 | `python3 patch.py machine SWOS NAME` | Renames the install's machine for the match log |
+
+With `--dry-run`, `import`, `db import` and `db apply` check everything
+and list what they would write and change (every team and player field
+with its old and new value), then stop: nothing is written.
 
 ### CSV files
 
@@ -584,7 +612,6 @@ PLAYER MARKET` and `FORMAT SAVE DISK`.
   is never changed.
 - A player's price is worked out by the game from his rating; it cannot be
   set on its own.
-- A user tactic must be loaded into its slot again after a restart.
 - A DIY or preset save keeps only the round or stage in play, so a report
   of earlier rounds needs a save of each round (or the match log).
 - Goals of a penalty shootout belong to no player; when a match has more

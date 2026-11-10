@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.92b
+; SWOS 96-97 In-Game Editors V0.93b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -31,7 +31,7 @@
 
         xdef    team_page_init, team_import_action, team_ok_action
         xdef    team_row_action, team_settings_action
-        xdef    team_screen_save, team_screen_cancel
+        xdef    team_screen_save, team_screen_cancel, team_screen_changed
         xref    editor_base
         xref    screen_run
         xref    player_screen, settings_screen
@@ -218,6 +218,20 @@ team_row_action:
 team_settings_action:
         lea     settings_screen,a0
         bra.l   screen_run
+
+; team_screen_changed: A5 = editor base. Z clear when the working copy
+; differs from what it was when the team screen opened, so CANCEL would
+; lose something. Preserves every register.
+team_screen_changed:
+        movem.l d0/a0-a1,-(sp)
+        lea     WORK_TEAM+TE_SCREEN_BASE(a5),a0
+        lea     team_working_copy,a1
+        move.w  #TEAM_SIZE/4-1,d0
+.compare:
+        cmpm.l  (a0)+,(a1)+
+        dbne    d0,.compare
+        movem.l (sp)+,d0/a0-a1          ; the flags stay
+        rts
 
 set_text:       dc.b    'SET ',0
 refused_title:  dc.b    'TEAM NOT ACCEPTED',0

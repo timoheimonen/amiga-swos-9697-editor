@@ -241,6 +241,7 @@ new directory `DIR`; `patch.py db export INSTALL DIR` writes the database:
 |---|---|---|
 | `export` | `CUSTOMS.EDT.json` | The custom set, when the install has a `CUSTOMS.EDT` (with `customs-players.csv` and `customs-teams.csv`) |
 | `export` | `tactics/NAME.TAC.json` | Each `.TAC` the editors accept |
+| `export` | `TACTICS.CFG.json` | The kept user tactics, when the install has a sound `TACTICS.CFG` |
 | `export` | `definitions/NAME.DEF.json` | Each `.DEF` the editors accept |
 | `export` | `saves/NAME.json` | Each readable competition save (`.DIY .PRE .SEA .CAR`) and link file (`.DLD .DLP .DLS .DLC`), for reading only |
 | `export` | `database/DBASE.CFG.json` | The edited set's manifest, for reading only |
@@ -318,6 +319,12 @@ Import refuses a tactic as the editors do, in this order: a name of more than
 8 characters; x above 14; two players on one spot in a zone; a label not 0-4
 or 255; a used label not on exactly two players; a base formation above 11.
 
+### Kept user tactics (`TACTICS.CFG.json`)
+
+`{"schema": "swos-amiga-user-tactics-v1", "slots": [...]}`: six entries for
+USER A to USER F, each a tactic object as in `NAME.TAC.json` or `null` for a
+slot that is not kept. Import checks every tactic as above.
+
 ### Tournament definitions (`NAME.DEF.json`)
 
 A DIY league, cup or tournament as the game's setup pages describe it, with
@@ -390,14 +397,15 @@ a link or a manifest is for reading only"):
 | `CUSTOMS.EDT.json` | The custom set `CUSTOMS.EDT`, saved with `CUSTOMS.BAK` first |
 | `NAME.TAC.json` | The tactic `NAME.TAC` (the name in upper case) |
 | `NAME.DEF.json` | The definition `NAME.DEF` (the name in upper case) |
+| `TACTICS.CFG.json`, `TACTICS.CFG` | The kept user tactics `TACTICS.CFG` |
 | `TEAM.ggg.json` | A database group, into a new generation of the edited set; the group is the one of the teams in the file |
 | `customs-players.csv`, `customs-teams.csv` | The custom set |
 | `NAME.TAC`, `NAME.DEF` | Copied as they are, after the checks |
 
 Any other file is refused. A target name has 1-29 characters with a dot; a
 `.TAC` needs a name of 1-8 characters before `.TAC`, the names the game lists.
-A target that exists with the same contents is reported unchanged; a `.TAC`
-or `.DEF` that exists with other contents is replaced only with `--replace`,
+A target that exists with the same contents is reported unchanged; a `.TAC`,
+`.DEF` or `TACTICS.CFG` that exists with other contents is replaced only with `--replace`,
 and a sound `.DEF` replaced is kept as `NAME.DEF.BAK` first, as SAVE
 DEFINITION keeps it.
 The save directory holds at most 512 names, 45 of them game saves.

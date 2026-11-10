@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.92b
+; SWOS 96-97 In-Game Editors V0.93b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -15,7 +15,8 @@
         include "ui.i"
         include "dialog.i"
 
-        xdef    dialog_open
+        xdef    dialog_open, dialog_open_modal
+        xdef    dialog_focus, dialog_focused
         xdef    dialog_poll
         xdef    dialog_set
         xdef    dialog_draw
@@ -35,10 +36,50 @@ dialog_state:
 
 ; ---------------------------------------------------------------------------
 ; dialog_open: A0 = descriptor, D2.l = disabled mask. D0.l = 0.
+; The focus is where it was when the running screen last showed this
+; descriptor (the dialog shown now, or the one a message replaced), else
+; the descriptor's default.
 ; ---------------------------------------------------------------------------
 dialog_open:
         movem.l d1-d7/a0-a6,-(sp)
         bsr.s   dialog_state
+        move.w  DIALOG_DEFAULT(a0),d5   ; the focus wanted
+        tst.w   DLG_FRESH(a4)
+        bne.s   .wanted
+        tst.l   DLG_KEPT_DESCRIPTOR(a4)
+        bne.s   .after_message
+        cmpa.l  DLG_DESCRIPTOR(a4),a0
+        bne.s   .wanted
+        move.w  DLG_FOCUS(a4),d5
+        bra.s   .wanted
+.after_message:
+        cmpa.l  DLG_KEPT_DESCRIPTOR(a4),a0
+        bne.s   .wanted
+        move.w  DLG_KEPT_FOCUS(a4),d5
+.wanted:
+        clr.w   DLG_FRESH(a4)
+        clr.l   DLG_KEPT_DESCRIPTOR(a4)
+        bra.s   open_dialog
+
+; ---------------------------------------------------------------------------
+; dialog_open_modal: A0 = descriptor of a message or question, D2.l =
+; disabled mask. D0.l = 0. It opens at its default; the focus of the dialog
+; it replaces is kept for that dialog's next dialog_open (a message after a
+; message keeps the first one's).
+; ---------------------------------------------------------------------------
+dialog_open_modal:
+        movem.l d1-d7/a0-a6,-(sp)
+        bsr.s   dialog_state
+        move.w  DIALOG_DEFAULT(a0),d5
+        tst.w   DLG_FRESH(a4)
+        bne.s   open_dialog             ; the screen has shown no dialog yet
+        tst.l   DLG_KEPT_DESCRIPTOR(a4)
+        bne.s   open_dialog
+        move.l  DLG_DESCRIPTOR(a4),DLG_KEPT_DESCRIPTOR(a4)
+        move.w  DLG_FOCUS(a4),DLG_KEPT_FOCUS(a4)
+; open_dialog: A0 = descriptor, D2.l = disabled mask, D5.w = the focus
+; wanted, A4 = state; the caller's D1-D7/A0-A6 are on the stack.
+open_dialog:
         bsr.w   flush_queue             ; kept paints belong to the dialog before
         move.l  a0,DLG_DESCRIPTOR(a4)
         move.l  d2,DLG_DISABLED(a4)
@@ -69,13 +110,59 @@ dialog_open:
         addq.w  #1,d1
         bra.s   .button
 .focus:
+        move.w  d5,d1
+        bmi.s   .default
+        cmp.w   DLG_COUNT(a4),d1
+        bcc.s   .default
+        bsr.w   is_enabled
+        bne.s   .focused
+.default:
         move.w  DIALOG_DEFAULT(a0),d1
         bsr.w   enabled_index           ; D1 = usable focus or -1
+.focused:
         move.w  d1,DLG_FOCUS(a4)
         lea     paint_all(pc),a2
         bsr.w   dialog_paint
         moveq   #0,d0
         movem.l (sp)+,d1-d7/a0-a6
+        rts
+
+; ---------------------------------------------------------------------------
+; dialog_focus: D1.w = button index. The focus moves there when the button
+; can be chosen. D0.l = 0, or -1 when it cannot (the focus stays); flags set
+; from D0.
+; ---------------------------------------------------------------------------
+dialog_focus:
+        movem.l d1-d7/a0-a6,-(sp)
+        bsr.w   dialog_state
+        moveq   #-1,d0
+        tst.w   d1
+        bmi.s   .done
+        cmp.w   DLG_COUNT(a4),d1
+        bcc.s   .done
+        bsr.w   is_enabled
+        beq.s   .done
+        move.w  DLG_FOCUS(a4),d0
+        cmp.w   d1,d0
+        beq.s   .there
+        move.w  d1,DLG_FOCUS(a4)
+        swap    d0                      ; the button it leaves, -1 none
+        move.w  d1,d0
+        bsr.w   repaint_pair
+.there:
+        moveq   #0,d0
+.done:
+        movem.l (sp)+,d1-d7/a0-a6
+        tst.l   d0
+        rts
+
+; dialog_focused: D0.l = the button with the focus, -1 none.
+dialog_focused:
+        move.l  a4,-(sp)
+        bsr.w   dialog_state
+        move.w  DLG_FOCUS(a4),d0
+        ext.l   d0
+        movea.l (sp)+,a4
         rts
 
 ; enabled_index: D1.w = wanted index. D1.w = it when enabled, else the first

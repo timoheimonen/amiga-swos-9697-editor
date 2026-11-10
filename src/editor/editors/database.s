@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.92b
+; SWOS 96-97 In-Game Editors V0.93b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -31,7 +31,9 @@
 ; chooses its destination group on this screen (PICK_COPY_COUNTRY).
 ;
 ; Controls: joystick or cursor keys move the focus, Fire or Return chooses,
-; Esc leaves (or ends a copy). The label is typed in a keyboard field.
+; Esc leaves (or ends a copy). The label is typed in a keyboard field. The
+; screen opens with the focus on the working group's row; PREVIOUS and NEXT
+; keep it, and pass it to each other at an end of the list.
 
         include "swos2.i"
         include "slave.i"
@@ -45,7 +47,8 @@
         xref    editor_base, editor_image
         xref    screen_run
         xref    dialog_open, dialog_poll, dialog_set, dialog_draw
-        xref    field_start, field_key
+        xref    dialog_focus, dialog_focused
+        xref    field_start, field_key, field_shown
         xref    message_title, message_line, message_lines, message_open, message_poll
         xref    message_storage_reason
         xref    text_copy, text_copy_max, text_decimal
@@ -54,7 +57,7 @@
         xref    db_find_entry, db_group_list, db_group_name, db_label_crc
         xref    db_switch_on, db_switch_off, db_switch_store, db_load_group, db_save, db_old_versions
         xref    db_start_check, db_problem_name
-        xref    matchlog_start
+        xref    matchlog_start, tactics_start
         xref    boundary_gate
         xref    previous_text, next_text
 
@@ -113,13 +116,15 @@ STEP_CHECK              equ 6           ; on entry: offer the recovery
 ; ===========================================================================
 ; database_menu_init: init callback of the main menu's copy. The first time
 ; the main menu is built, the match log learns the install and its next
-; sequence number (matchlog_start) and a remembered USE EDITED DATABASE: ON
-; is checked (db_start_check), so the set is in use from the start or the
-; caption says why not; then the native init.
+; sequence number (matchlog_start), the user's kept tactics go into their
+; slots (tactics_start) and a remembered USE EDITED DATABASE: ON is checked
+; (db_start_check), so the set is in use from the start or the caption says
+; why not; then the native init.
 database_menu_init:
         movem.l d0-d7/a0-a6,-(sp)
         movea.l editor_base,a5
         bsr.l   matchlog_start
+        bsr.l   tactics_start
         bsr.l   db_start_check
         movem.l (sp)+,d0-d7/a0-a6
         jmp     main_menu_init
@@ -139,6 +144,7 @@ database_action:
         clr.w   DB_PAGE(a4)
         clr.w   DB_CLUB_PAGE(a4)
         move.w  #-1,DB_CLUB(a4)
+        move.w  #-1,DB_FILTER(a4)
         move.w  #STEP_CHECK,DB_STEP(a4)
         bsr.l   db_read_set
         bsr.w   label_from_set
@@ -230,7 +236,7 @@ database_screen:
 database_open:
         lea     WORK_DB(a5),a4
         cmpi.w  #STEP_CHECK,DB_STEP(a4)
-        bne.w   show_database
+        bne.w   open_shown
         move.w  #STEP_NONE,DB_STEP(a4)
         ; once on entry: a damaged or missing DBASE.CFG with a sound
         ; DBASE.BAK (an interrupted save) offers the recovery
@@ -272,9 +278,9 @@ database_open:
 ; switch could not be turned on, and why.
 start_note:
         tst.w   DB_START_PROBLEM(a4)
-        beq.w   show_database
+        beq.w   open_shown
         tst.w   DB_START_NOTED(a4)
-        bne.w   show_database
+        bne.w   open_shown
         move.w  #1,DB_START_NOTED(a4)
         lea     not_found_title(pc),a0
         bsr.l   message_title
@@ -290,6 +296,30 @@ start_note:
         moveq   #2,d0
         bsr.l   message_line
         bra.w   open_message
+
+; open_shown: the screen as it opens, with the focus on the row of the
+; working group (the group the user comes back from) when its page is shown.
+open_shown:
+        bsr.w   show_database
+        move.w  DB_GROUP(a4),d0
+        bmi.s   .done
+        bsr.l   db_group_list
+        moveq   #0,d1
+.find:
+        cmp.b   (a0,d1.w),d0
+        beq.s   .found
+        addq.w  #1,d1
+        cmpi.w  #DATABASE_GROUP_COUNT,d1
+        bcs.s   .find
+        bra.s   .done
+.found:
+        sub.w   DB_PAGE(a4),d1
+        cmpi.w  #GROUP_ROWS,d1
+        bcc.s   .done                   ; on another page
+        bsr.l   dialog_focus
+.done:
+        moveq   #0,d0
+        rts
 
 ; database_tick: A5 = editor base, D7.w = events, D6.w = key. D0.l <> 0
 ; closes the screen (DB_NEXT says what follows).
@@ -329,13 +359,31 @@ database_tick:
         bpl.s   .page
         clr.w   DB_PAGE(a4)
 .page:
-        bra.w   show_database
+        moveq   #INDEX_NEXT,d1
+        bra.s   page_shown
 .next:
         addi.w  #GROUP_ROWS,DB_PAGE(a4)
-        bra.w   show_database
+        moveq   #INDEX_PREVIOUS,d1
+        bra.s   page_shown
 .cups:
         move.w  #DBS_CUPS,DB_NEXT(a4)
         moveq   #1,d0
+        rts
+
+; page_shown: another page of the list. D1.w = the page button that takes
+; the focus when the one chosen with Fire has reached its end of the list.
+page_shown:
+        bsr.l   dialog_focused
+        move.w  d0,d3
+        bsr.s   show_database
+        cmpi.w  #INDEX_PREVIOUS,d3
+        bcs.s   .done                   ; chosen with its key from a row
+        bsr.l   dialog_focused
+        cmp.w   d0,d3
+        beq.s   .done
+        bsr.l   dialog_focus
+.done:
+        moveq   #0,d0
         rts
 
 ; ---------------------------------------------------------------------------
@@ -552,11 +600,12 @@ draw_field:
         lea     WORK_DB(a5),a4
         lea     DB_LABEL(a4),a0
         lea     DB_FIELD(a4),a1
-        bsr.l   text_copy
         cmpi.w  #DBM_TYPING,DB_MODE(a4)
-        bne.s   .draw
-        move.b  #'_',(a1)+
-        clr.b   (a1)
+        beq.s   .typing
+        bsr.l   text_copy
+        bra.s   .draw
+.typing:
+        bsr.l   field_shown
 .draw:
         lea     field_commands(pc),a0
         bsr.l   dialog_draw
@@ -600,6 +649,7 @@ open_group:
         bne.s   .failed
         clr.w   DB_CLUB_PAGE(a4)
         move.w  #-1,DB_CLUB(a4)
+        move.w  #-1,DB_FILTER(a4)
         cmpi.w  #PICK_COPY_COUNTRY,DB_PICK(a4)
         bne.s   .open
         move.w  #PICK_COPY_SLOT,DB_PICK(a4)
@@ -1097,7 +1147,7 @@ body_commands:
         dc.b    '* IN THE SET  + CHANGED',0
         even
         dc.w    UI_TEXT,ROW_X,CREDIT_Y,ROW_W*2+8,UI_DIM,UI_CENTER
-        dc.b    'V0.92b by Timo Heimonen (timo.heimonen@proton.me)',0
+        dc.b    'V0.93b by Timo Heimonen (timo.heimonen@proton.me)',0
         even
         dc.w    UI_END
 
