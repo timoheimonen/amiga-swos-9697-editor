@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.92b
+; SWOS 96-97 In-Game Editors V0.93b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -17,9 +17,10 @@
 ;      missing team is reported (TEAM NOT FOUND), never replaced;
 ;   4. asks once before its tactics replace a different tactic the user
 ;      loaded or edited;
-;   5. installs its tactics (tactics_install: user-owned, refreshed), holds
-;      its rules and teams and opens the family's setup page, whose init
-;      applies the rules (editors/definition.s).
+;   5. installs its tactics (tactics_install: user-owned, kept, refreshed),
+;      holds its rules and teams and opens the family's setup page, whose
+;      init applies the rules (editors/definition.s); the kept tactics are
+;      written once the list has closed (tactics_keep).
 ;
 ; Nothing changes before step 5; NO at a question returns to the list.
 
@@ -39,7 +40,7 @@
         xref    message_open, message_poll, message_storage_reason
         xref    definition_check_file, definition_identity
         xref    definition_listed_teams, definition_problem_lines, definition_team_missing
-        xref    tactics_owned, tactics_install
+        xref    tactics_owned, tactics_install, tactics_keep
         xref    slot_list
         xref    storage_list, storage_size, storage_read, storage_read_part
         xref    text_copy, text_copy_max, text_decimal, text_hex32, text_pad
@@ -88,6 +89,10 @@ defload_action:
         bsr.l   screen_run
         btst    #DFS_LOADED,WORK_DEF+DF_STATE+1(a5)
         beq.s   .done
+        bclr    #DFS_TACTICS,WORK_DEF+DF_STATE+1(a5)
+        beq.s   .type
+        bsr.l   tactics_keep            ; the definition's tactics
+.type:
         move.w  WORK_DEF+DF_FAMILY(a5),diy_type_choice
         jmp     menu_request_exit
 .done:
@@ -661,6 +666,9 @@ load_finish:
         mulu.w  #DP_SIZE,d0
         lea     DEF_BODY_FIXED(a2,d0.l),a0
         move.w  DR_TACTIC_MASK(a2),d5
+        beq.s   .installed
+        bset    #DFS_TACTICS,WORK_DEF+DF_STATE+1(a5)
+.installed:
         moveq   #0,d4
 .slot:
         btst    d4,d5

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SWOS 96-97 In-Game Editors V0.92b
+# SWOS 96-97 In-Game Editors V0.93b
 # Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 # Licensed under the MIT License. See the LICENSE file for details.
 """Lossless JSON reader/writer for 370-byte Amiga SWOS tactics.
@@ -9,7 +9,9 @@ range of the unpacked executable. There is no RNC wrapper, count, or checksum
 inside a .TAC payload. This tool never modifies an ADF. A record is a nine-byte
 name, ten player maps of 35 ball zones (one byte per zone: x in the high nibble,
 y in the low nibble), ten mirror-pair labels and the base formation byte;
-validate_for_game and check_record hold the game's constraints.
+validate_for_game and check_record hold the game's constraints. kept_file,
+read_kept, decode_kept and encode_kept are the codec of TACTICS.CFG, the file
+in which the editors keep the user's tactics of the six user slots.
 
   python3 tools/tactic_data.py decode SWOS/data/TEST.TAC tactic.json
   python3 tools/tactic_data.py encode tactic.json SWOS/data/TEST.TAC
@@ -29,7 +31,9 @@ import argparse
 from collections import Counter
 import json
 from pathlib import Path
+import struct
 from typing import Any
+import zlib
 
 SCHEMA = "swos-amiga-tactics-v1"
 TACTIC_SIZE = 0x172
@@ -241,6 +245,81 @@ def import_body(working: bytes, source: bytes) -> bytes:
     if len(working) != TACTIC_SIZE or len(source) != TACTIC_SIZE:
         raise ValueError("both records must be 370 bytes")
     return working[:NAME_SIZE] + source[NAME_SIZE:]
+
+
+# TACTICS.CFG in the save directory: the user's kept tactics, which the
+# editor puts back into the user slots USER A-F at every start. An eight
+# byte magic, a version word, a word with one bit per kept slot, six
+# records and the CRC-32 of the bytes before it; values are big-endian.
+KEPT_NAME = "TACTICS.CFG"
+KEPT_SCHEMA = "swos-amiga-user-tactics-v1"
+KEPT_MAGIC = b"SWOSTAC1"
+KEPT_VERSION = 1
+USER_SLOTS = 6
+KEPT_RECORDS = len(KEPT_MAGIC) + 4
+KEPT_SIZE = KEPT_RECORDS + USER_SLOTS * TACTIC_SIZE + 4
+SLOT_LETTERS = "ABCDEF"
+
+
+def kept_file(records: list[bytes | None]) -> bytes:
+    """TACTICS.CFG with these records in the user slots; None is a slot
+    that is not kept. Every record must pass check_record."""
+    if len(records) != USER_SLOTS:
+        raise ValueError(f"the user tactics are exactly {USER_SLOTS} slots")
+    kept = 0
+    body = bytearray()
+    for slot, record in enumerate(records):
+        if record is None:
+            body += bytes(TACTIC_SIZE)
+            continue
+        code, details = check_record(record)
+        if code != TC_OK:
+            raise ValueError(f"USER {SLOT_LETTERS[slot]}: {problem_text(code, details)}")
+        kept |= 1 << slot
+        body += record
+    raw = KEPT_MAGIC + struct.pack(">HH", KEPT_VERSION, kept) + bytes(body)
+    return raw + struct.pack(">I", zlib.crc32(raw))
+
+
+def read_kept(raw: bytes) -> list[bytes | None]:
+    """The records of a TACTICS.CFG by slot, None for a slot that is not
+    kept. ValueError names what the editor does not accept: it then starts
+    with the game's own user tactics."""
+    if len(raw) != KEPT_SIZE:
+        raise ValueError(f"the file has {len(raw)} bytes, a {KEPT_NAME} has {KEPT_SIZE}")
+    if raw[:len(KEPT_MAGIC)] != KEPT_MAGIC:
+        raise ValueError(f"not a {KEPT_NAME}")
+    version, kept = struct.unpack_from(">HH", raw, len(KEPT_MAGIC))
+    if version != KEPT_VERSION:
+        raise ValueError(f"version {version}, the editors read version {KEPT_VERSION}")
+    if kept >> USER_SLOTS:
+        raise ValueError("more than six slots are marked")
+    if struct.unpack_from(">I", raw, KEPT_SIZE - 4)[0] != zlib.crc32(raw[:-4]):
+        raise ValueError("the CRC-32 does not match")
+    records: list[bytes | None] = []
+    for slot in range(USER_SLOTS):
+        if not kept >> slot & 1:
+            records.append(None)
+            continue
+        record = raw[KEPT_RECORDS + slot * TACTIC_SIZE:KEPT_RECORDS + (slot + 1) * TACTIC_SIZE]
+        code, details = check_record(record)
+        if code != TC_OK:
+            raise ValueError(f"USER {SLOT_LETTERS[slot]}: {problem_text(code, details)}")
+        records.append(record)
+    return records
+
+
+def decode_kept(raw: bytes) -> dict[str, Any]:
+    """TACTICS.CFG as JSON: one tactic or null per user slot."""
+    return {"schema": KEPT_SCHEMA,
+            "slots": [None if record is None else read_tactic(record) for record in read_kept(raw)]}
+
+
+def encode_kept(document: dict[str, Any]) -> bytes:
+    if document["schema"] != KEPT_SCHEMA:
+        raise ValueError(f"expected schema {KEPT_SCHEMA!r}")
+    slots = _array(document["slots"], USER_SLOTS, "slots")
+    return kept_file([None if tactic is None else write_tactic(tactic) for tactic in slots])
 
 
 def main() -> None:

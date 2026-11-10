@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.92b
+; SWOS 96-97 In-Game Editors V0.93b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -7,14 +7,18 @@
 ;
 ;   NAME            Fire starts typing (22 characters the game's font
 ;                   shows); Return or Fire keeps the name, Esc restores it
-;   NATIONALITY     the 153 native three-letter labels
+;   NATIONALITY     the 153 native three-letter labels; Fire opens them as
+;                   a list of thirty to a page, with the player's own
+;                   marked and focused (Esc leaves it unchanged)
 ;   SHIRT NUMBER    a new number is swapped with the player who has it
 ;   POSITION        G RB LB D RW LW M A; crossing the goalkeeper boundary
 ;                   shows the converted rating and the lineup effect and
 ;                   needs YES
 ;   APPEARANCE      0-2, with the native icon
-;   seven skills    0-7 with LEFT/RIGHT; Fire switches the specialty flag;
-;                   the outfield rating is their sum
+;   seven skills    0-7 with LEFT/RIGHT, or typed: a digit 0-7 sets the
+;                   skill and moves the focus to the next one, so seven
+;                   digits enter a player; Fire switches the specialty
+;                   flag; the outfield rating is their sum
 ;   GOALKEEPER      a goalkeeper's own rating, 0-38 (39 and 40 of the
 ;                   original data are kept until changed)
 ;   COPY PLAYER     puts the shown player into the clipboard
@@ -22,9 +26,13 @@
 ;                   skills, specialty flags and rating with the clipboard's;
 ;                   shirt number, low flags, status, goals, form and the
 ;                   rating cache stay
+;   PREVIOUS PLAYER, NEXT PLAYER
+;                   the player of the row before or after this one (16
+;                   follows 1); the changes to the shown player are kept as
+;                   OK keeps them, and the focus stays where it is
 ;   OK              keeps the changes in the working copy
-;   CANCEL, Esc     restores the working copy as it was when the screen
-;                   opened
+;   CANCEL, Esc     restores the working copy as it was when this player
+;                   was shown; asks first when that loses a change
 ; The value line shows the native price of the rating (derived, read only);
 ; Fire on it explains that a value cannot be set: the game works it out
 ; from the rating.
@@ -39,16 +47,17 @@
         include "ui.i"
         include "dialog.i"
 
-        xdef    player_screen
+        xdef    player_screen, pick_dialog
         xref    dialog_open, dialog_poll, dialog_set, dialog_draw, dialog_paint
+        xref    dialog_focus, dialog_focused
         xref    ui_draw
         xref    editor_base, editor_image
         xref    message_title, message_line, message_lines, message_open, message_poll
         xref    text_copy, text_copy_max, text_decimal, text_pad
-        xref    field_start, field_key
+        xref    field_start, field_key, field_shown
         xref    player_rating_sum, lineup_role_of
-        xref    team_screen_save, team_screen_cancel
-        xref    ok_text, cancel_text
+        xref    team_screen_save, team_screen_cancel, team_screen_changed
+        xref    ok_text, cancel_text, previous_text, next_text
 
 TOP                     equ 8
 HEIGHT                  equ 256
@@ -62,6 +71,12 @@ DERIVED_Y               equ ROWS_Y+13*ROW_STEP+4
 STATUS_Y                equ DERIVED_Y+12
 HINT_Y                  equ STATUS_Y+14
 BUTTON_Y                equ TOP+HEIGHT-16
+STEP_Y                  equ BUTTON_Y-17
+; PREVIOUS PLAYER and NEXT PLAYER stand above COPY PLAYER and PASTE PLAYER
+; in the same two columns: the focus moves between buttons by their
+; centres, so LEFT and RIGHT stay on a line only when the columns agree.
+STEP_W                  equ 96
+STEP_X2                 equ ROW_X+STEP_W+4
 ICON_X                  equ ROW_X+ROW_W+20
 ICON_Y                  equ ROWS_Y+4*ROW_STEP
 VALUE_COLUMN            equ 15          ; characters before a row's value
@@ -90,9 +105,24 @@ CODE_COPY               equ 40
 CODE_PASTE              equ 41
 CODE_OK                 equ 42
 CODE_VALUE              equ 43
+CODE_PREVIOUS           equ 44
+CODE_NEXT               equ 45
 ; Changes waiting for YES (TS_PENDING)
 PENDING_POSITION        equ 1
 PENDING_PASTE           equ 2
+PENDING_DISCARD         equ 3           ; CANCEL with changes
+; The nationality list: a band over the screen, PICK_CELLS labels to a page
+PICK_COLUMNS            equ 10
+PICK_CELLS              equ 30
+PICK_PAGES              equ (NATIONALITY_COUNT+PICK_CELLS-1)/PICK_CELLS
+PICK_TOP                equ 72
+PICK_HEIGHT             equ 88
+PICK_Y                  equ PICK_TOP+18
+PICK_BUTTON_Y           equ PICK_TOP+PICK_HEIGHT-18
+CODE_PICK_PREVIOUS      equ 1
+CODE_PICK_NEXT          equ 2
+CODE_PICK               equ 100         ; +cell
+INDEX_PICK_PREVIOUS     equ PICK_CELLS
 
         section .text,code
 
@@ -123,8 +153,14 @@ is_keeper:
 ; player_open: A5 = editor base.
 ; ---------------------------------------------------------------------------
 player_open:
-        bsr.l   team_screen_save
         lea     WORK_TEAM_SCREEN(a5),a4
+        lea     status_ready(pc),a0
+        lea     TS_STATUS(a4),a1
+        bsr.l   text_copy
+; row_open: the screen for the player of TE_ROW, with the status line as
+; it is. The working copy as it is now is what CANCEL restores.
+row_open:
+        bsr.l   team_screen_save
         move.w  #TSM_MAIN,TS_MODE(a4)
         clr.w   TS_PENDING(a4)
         clr.w   TS_SIDE_VALID(a4)
@@ -139,9 +175,6 @@ player_open:
         lea     team_working_copy+TEAM_NAME,a0
         moveq   #TEAM_NAME_SIZE-1,d0
         bsr.l   text_copy_max
-        lea     status_ready(pc),a0
-        lea     TS_STATUS(a4),a1
-        bsr.l   text_copy
         bsr.w   player
         bra.w   show_player
 
@@ -154,6 +187,8 @@ player_tick:
         move.w  TS_MODE(a4),d0
         cmpi.w  #TSM_TYPING,d0
         beq.w   type_name
+        cmpi.w  #TSM_PICK,d0
+        beq.w   pick_tick
         cmpi.w  #TSM_MAIN,d0
         beq.s   .main
         bsr.l   message_poll            ; a question or a message is open
@@ -162,12 +197,23 @@ player_tick:
         bne.s   .closed
         cmpi.w  #MSG_YES,d0
         bne.s   .closed
+        cmpi.w  #PENDING_DISCARD,TS_PENDING(a4)
+        beq.l   team_screen_cancel      ; the screen closes
         bsr.w   apply_pending
 .closed:
         move.w  #TSM_MAIN,TS_MODE(a4)
         clr.w   TS_PENDING(a4)
         bra.w   show_player
 .main:
+        cmpi.w  #'0',d6                 ; a digit on a skill row sets the skill
+        bcs.s   .poll
+        cmpi.w  #'0'+SKILL_MAX,d6
+        bhi.s   .poll
+        bsr.l   dialog_focused
+        subi.w  #INDEX_SKILL,d0
+        cmpi.w  #SKILL_COUNT,d0
+        bcs.w   type_skill
+.poll:
         bsr.l   dialog_poll
         bmi.w   stay
         moveq   #1,d2                   ; direction: +1, or -1 for DIALOG_DEC
@@ -179,9 +225,13 @@ player_tick:
         andi.w  #DIALOG_INC|DIALOG_DEC,d4
         andi.w  #DIALOG_CODE_MASK,d0
         cmpi.w  #CODE_CANCEL,d0
-        beq.l   team_screen_cancel
+        beq.w   cancel_player
         cmpi.w  #CODE_OK,d0
         beq.w   player_ok
+        cmpi.w  #CODE_PREVIOUS,d0
+        beq.w   previous_player
+        cmpi.w  #CODE_NEXT,d0
+        beq.w   next_player
         cmpi.w  #CODE_NAME,d0
         beq.w   start_typing
         cmpi.w  #CODE_NATIONALITY,d0
@@ -211,6 +261,82 @@ player_ok:
         moveq   #1,d0
         rts
 
+; cancel_player: CANCEL or Esc. Without a change the screen closes; with
+; one it asks first, so a slip of the hand loses nothing.
+cancel_player:
+        bsr.l   team_screen_changed
+        beq.l   team_screen_cancel
+        move.w  #PENDING_DISCARD,TS_PENDING(a4)
+        lea     discard_title(pc),a0
+        bsr.l   message_title
+        lea     discard_line(pc),a0
+        moveq   #0,d0
+        bsr.l   message_line
+        lea     discard_question(pc),a0
+        moveq   #2,d0
+        bsr.l   message_line
+        bsr.w   ask_open
+        bra.w   stay
+
+; previous_player, next_player: the player of the row before or after the
+; shown one; row 16 and row 1 follow each other. The changes to the shown
+; player stay in the working copy, as after OK, and CANCEL then restores
+; the new player only. The dialog is the same one, so the focus stays.
+previous_player:
+        moveq   #-1,d2
+        bra.s   step_player
+next_player:
+        moveq   #1,d2
+step_player:
+        lea     TS_STATUS(a4),a1
+        lea     status_ready(pc),a0
+        bsr.l   team_screen_changed
+        beq.s   .status
+        lea     status_kept(pc),a0
+        bsr.l   text_copy
+        move.w  WORK_TEAM+TE_ROW(a5),d0
+        addq.w  #1,d0
+        bsr.l   text_decimal
+        lea     status_kept_end(pc),a0
+.status:
+        bsr.l   text_copy
+        add.w   WORK_TEAM+TE_ROW(a5),d2
+        andi.w  #PLAYER_COUNT-1,d2
+        move.w  d2,WORK_TEAM+TE_ROW(a5)
+        bra.w   row_open
+
+; type_skill: D0.w = skill 0-6 of the focused row, D6.w = the digit typed.
+; Sets the skill's rating and keeps its specialty flag; the focus moves to
+; the next skill, so the seven skills can be typed one after another.
+type_skill:
+        move.w  d0,d5
+        moveq   #SKILL_COUNT-1,d1
+        sub.w   d0,d1
+        lsl.w   #2,d1                   ; shift of the skill's nibble
+        moveq   #SKILL_MAX,d0
+        lsl.l   d1,d0
+        not.l   d0
+        move.l  PLAYER_SKILLS(a3),d3
+        and.l   d0,d3
+        moveq   #0,d0
+        move.w  d6,d0
+        subi.w  #'0',d0
+        lsl.l   d1,d0
+        or.l    d0,d3
+        move.l  d3,PLAYER_SKILLS(a3)
+        move.l  d3,d0
+        bsr.l   player_rating_sum
+        move.b  d0,PLAYER_RATING(a3)
+        move.w  d5,d0
+        addq.w  #INDEX_SKILL,d0
+        bsr.w   redraw_row
+        cmpi.w  #SKILL_COUNT-1,d5
+        bcc.w   stay                    ; the last skill keeps the focus
+        move.w  d5,d1
+        addq.w  #INDEX_SKILL+1,d1
+        bsr.l   dialog_focus
+        bra.w   stay
+
 ; value_refused: Fire on the value line. A player's value is not stored:
 ; the native price follows from the rating, so the message says how to
 ; change it instead.
@@ -229,6 +355,8 @@ value_refused:
 ; Value controls: D2.l = +1 or -1, A3 = player, A4 = screen state.
 ; ---------------------------------------------------------------------------
 step_nationality:
+        tst.w   d4
+        beq.s   pick_nationality        ; Fire: the list
         moveq   #0,d0
         move.b  PLAYER_NATIONALITY(a3),d0
         add.w   d2,d0
@@ -242,6 +370,120 @@ step_nationality:
         move.b  d0,PLAYER_NATIONALITY(a3)
         moveq   #INDEX_NATIONALITY,d0
         bra.w   redraw_row
+
+; pick_nationality: the list opens on the page of the player's
+; nationality, with the focus on it.
+pick_nationality:
+        moveq   #0,d1
+        move.b  PLAYER_NATIONALITY(a3),d1
+        cmpi.w  #NATIONALITY_COUNT,d1
+        bcs.s   .page
+        moveq   #0,d1                   ; a value outside the labels
+.page:
+        divu.w  #PICK_CELLS,d1          ; page, and the cell in the high word
+        move.w  d1,TS_PICK_PAGE(a4)
+        move.w  #TSM_PICK,TS_MODE(a4)
+        bsr.w   show_pick
+        swap    d1
+        bsr.l   dialog_focus
+        bra.w   stay
+
+; pick_tick: one frame of the list. A label chosen becomes the player's
+; nationality; Esc leaves it. Either way the player's dialog returns with
+; the focus on NATIONALITY. PREVIOUS and NEXT go round the pages.
+pick_tick:
+        bsr.l   dialog_poll
+        bmi.w   stay
+        tst.w   d0
+        beq.s   .close                  ; Esc
+        cmpi.w  #CODE_PICK_PREVIOUS,d0
+        beq.s   .previous
+        cmpi.w  #CODE_PICK_NEXT,d0
+        beq.s   .next
+        subi.w  #CODE_PICK,d0
+        cmpi.w  #PICK_CELLS,d0
+        bcc.w   stay
+        move.w  TS_PICK_PAGE(a4),d1
+        mulu.w  #PICK_CELLS,d1
+        add.w   d1,d0
+        cmpi.w  #NATIONALITY_COUNT,d0
+        bcc.w   stay
+        move.b  d0,PLAYER_NATIONALITY(a3)
+.close:
+        move.w  #TSM_MAIN,TS_MODE(a4)
+        bsr.w   show_player
+        moveq   #INDEX_NATIONALITY,d1
+        bsr.l   dialog_focus
+        bra.w   stay
+.previous:
+        move.w  TS_PICK_PAGE(a4),d0
+        subq.w  #1,d0
+        bpl.s   .page
+        moveq   #PICK_PAGES-1,d0
+        bra.s   .page
+.next:
+        move.w  TS_PICK_PAGE(a4),d0
+        addq.w  #1,d0
+        cmpi.w  #PICK_PAGES,d0
+        bcs.s   .page
+        moveq   #0,d0
+.page:
+        move.w  d0,TS_PICK_PAGE(a4)
+        bsr.w   show_pick
+        bra.w   stay
+
+; show_pick: the page TS_PICK_PAGE of the list. Its labels use the rows'
+; label area, which show_player builds again. Preserves all registers.
+show_pick:
+        movem.l d0-d4/a0-a1,-(sp)
+        move.w  TS_PICK_PAGE(a4),d4
+        mulu.w  #PICK_CELLS,d4          ; the page's first label
+        lea     TS_LABELS(a4),a1
+        lea     nationality_abbreviations,a0
+        move.w  d4,d0
+        mulu.w  #3,d0
+        adda.l  d0,a0
+        moveq   #0,d2                   ; cells after the last label
+        moveq   #0,d1
+.cell:
+        move.w  d4,d0
+        add.w   d1,d0
+        cmpi.w  #NATIONALITY_COUNT,d0
+        bcs.s   .label
+        bset    d1,d2
+        clr.l   (a1)+
+        bra.s   .next
+.label:
+        move.b  (a0)+,(a1)+
+        move.b  (a0)+,(a1)+
+        move.b  (a0)+,(a1)+
+        clr.b   (a1)+
+.next:
+        addq.w  #1,d1
+        cmpi.w  #PICK_CELLS,d1
+        bcs.s   .cell
+        lea     TS_SCRATCH(a4),a1
+        lea     pick_page_text(pc),a0
+        bsr.l   text_copy
+        move.w  TS_PICK_PAGE(a4),d0
+        addq.w  #1,d0
+        bsr.l   text_decimal
+        lea     pick_page_end(pc),a0
+        bsr.l   text_copy
+        lea     pick_dialog(pc),a0
+        bsr.l   dialog_open
+        moveq   #0,d2                   ; the player's own label, marked
+        move.b  PLAYER_NATIONALITY(a3),d2
+        sub.w   d4,d2
+        bcs.s   .done
+        cmpi.w  #PICK_CELLS,d2
+        bcc.s   .done
+        moveq   #UI_ACTIVE,d3
+        suba.l  a0,a0
+        bsr.l   dialog_set
+.done:
+        movem.l (sp)+,d0-d4/a0-a1
+        rts
 
 ; step_shirt: the next number up or down (1-16) is swapped with its holder.
 step_shirt:
@@ -848,10 +1090,7 @@ build_name:
         bsr.w   column
         cmpi.w  #TSM_TYPING,TS_MODE(a4)
         bne.s   .shown
-        lea     TS_NAME(a4),a0
-        bsr.l   text_copy
-        move.b  #'_',(a1)+
-        clr.b   (a1)
+        bsr.l   field_shown
         bra.s   .done
 .shown:
         lea     PLAYER_NAME(a3),a0
@@ -950,11 +1189,62 @@ FIELD   macro                           ; row, width, code, flags
         LABEL_AT \1
         endm
 
+CELL    macro                           ; \1 = cell
+        dc.w    ROW_X+2+((\1)-((\1)/PICK_COLUMNS)*PICK_COLUMNS)*30,PICK_Y+((\1)/PICK_COLUMNS)*12
+        dc.w    28,ROW_H,CODE_PICK+\1,DIALOG_ROW|UI_NORMAL
+        dc.l    editor_image+WORK_TEAM_SCREEN+TS_LABELS+(\1)*4
+        endm
+
+pick_dialog:
+        dc.w    PICK_TOP,PICK_HEIGHT,UI_SELECT
+        dc.l    pick_title
+        dc.l    pick_body
+        dc.w    0,CODE_CANCEL,PICK_CELLS+2
+        CELL    0
+        CELL    1
+        CELL    2
+        CELL    3
+        CELL    4
+        CELL    5
+        CELL    6
+        CELL    7
+        CELL    8
+        CELL    9
+        CELL    10
+        CELL    11
+        CELL    12
+        CELL    13
+        CELL    14
+        CELL    15
+        CELL    16
+        CELL    17
+        CELL    18
+        CELL    19
+        CELL    20
+        CELL    21
+        CELL    22
+        CELL    23
+        CELL    24
+        CELL    25
+        CELL    26
+        CELL    27
+        CELL    28
+        CELL    29
+        dc.w    ROW_X,PICK_BUTTON_Y,80,13,CODE_PICK_PREVIOUS,UI_NORMAL
+        dc.l    previous_text
+        dc.w    ROW_X+84,PICK_BUTTON_Y,80,13,CODE_PICK_NEXT,UI_NORMAL
+        dc.l    next_text
+
+pick_body:
+        dc.w    UI_TEXT_AT,ROW_X+172,PICK_BUTTON_Y+3,132,UI_DIM,UI_LEFT_CLIPPED
+        dc.l    editor_image+WORK_TEAM_SCREEN+TS_SCRATCH
+        dc.w    UI_END
+
 player_dialog:
         dc.w    TOP,HEIGHT,UI_SELECT
         dc.l    editor_image+WORK_TEAM_SCREEN+TS_TITLE
         dc.l    player_body
-        dc.w    INDEX_NAME,CODE_CANCEL,18
+        dc.w    INDEX_NAME,CODE_CANCEL,20
         FIELD   0,NAME_W,CODE_NAME,0
         FIELD   1,ROW_W,CODE_NATIONALITY,DIALOG_SPIN
         FIELD   2,ROW_W,CODE_SHIRT,DIALOG_SPIN
@@ -968,23 +1258,27 @@ player_dialog:
         FIELD   10,ROW_W,CODE_SKILL+5,DIALOG_SPIN
         FIELD   11,ROW_W,CODE_SKILL+6,DIALOG_SPIN
         FIELD   12,ROW_W,CODE_KEEPER,DIALOG_SPIN
-        dc.w    ROW_X,BUTTON_Y,84,13,CODE_COPY,UI_NORMAL
+        dc.w    ROW_X,BUTTON_Y,STEP_W,13,CODE_COPY,UI_NORMAL
         dc.l    copy_text
-        dc.w    ROW_X+90,BUTTON_Y,84,13,CODE_PASTE,UI_NORMAL
+        dc.w    STEP_X2,BUTTON_Y,STEP_W,13,CODE_PASTE,UI_NORMAL
         dc.l    paste_text
-        dc.w    ROW_X+196,BUTTON_Y,48,13,CODE_OK,UI_NORMAL
+        dc.w    ROW_X+202,BUTTON_Y,44,13,CODE_OK,UI_NORMAL
         dc.l    ok_text
         dc.w    ROW_X+250,BUTTON_Y,54,13,CODE_CANCEL,UI_NORMAL
         dc.l    cancel_text
         dc.w    ROW_X,DERIVED_Y,NAME_W,9,CODE_VALUE,UI_NORMAL|DIALOG_ROW
         dc.l    editor_image+WORK_TEAM_SCREEN+TS_DERIVED
+        dc.w    ROW_X,STEP_Y,STEP_W,13,CODE_PREVIOUS,UI_NORMAL
+        dc.l    previous_player_text
+        dc.w    STEP_X2,STEP_Y,STEP_W,13,CODE_NEXT,UI_NORMAL
+        dc.l    next_player_text
 
 player_body:
         dc.w    UI_TEXT,ROW_X,HINT_Y,NAME_W,UI_DIM,UI_LEFT
-        dc.b    'LEFT/RIGHT CHANGES A VALUE. FIRE ON A SKILL',0
+        dc.b    'LEFT/RIGHT CHANGES A VALUE, 0-7 TYPES A SKILL.',0
         even
         dc.w    UI_TEXT,ROW_X,HINT_Y+10,NAME_W,UI_DIM,UI_LEFT
-        dc.b    'SWITCHES ITS SPECIALTY (*), FIRE ON NAME TYPES.',0
+        dc.b    'FIRE: SPECIALTY (*), NAME TYPED, NATIONALITY LIST.',0
         even
         dc.w    UI_END
 
@@ -1021,13 +1315,26 @@ title_text:             dc.b    'PLAYER ',0
 title_separator:        dc.b    ' OF ',0
 copy_text:              dc.b    'COP_Y PLAYER',0
 paste_text:             dc.b    '_PASTE PLAYER',0
+previous_player_text:   dc.b    'P_REVIOUS PLAYER',0
+next_player_text:       dc.b    '_NEXT PLAYER',0
 rating_text:            dc.b    'RATING ',0
 value_text:             dc.b    '    VALUE ',0
 status_ready:           dc.b    'OK KEEPS THE CHANGES, CANCEL UNDOES THEM',0
-status_typing:          dc.b    'TYPE THE NAME. RETURN KEEPS IT, ESC LEAVES IT',0
+pick_title:             dc.b    'NATIONALITY (ESC: NO CHANGE)',0
+pick_page_text:         dc.b    'PAGE ',0
+pick_page_end:          dc.b    ' OF 6',0
+        if PICK_PAGES-6
+        fail "pick_page_end names six pages"
+        endif
+status_typing:          dc.b    'CURSOR: LEFT/RIGHT. RETURN KEEPS, ESC UNDOES',0
 status_swapped:         dc.b    'NUMBER SWAPPED WITH ',0
 status_copied:          dc.b    'THE PLAYER IS IN THE CLIPBOARD',0
 status_pasted:          dc.b    'PASTED. SHIRT NUMBER AND HISTORY STAY',0
+status_kept:            dc.b    'CHANGES TO PLAYER ',0
+status_kept_end:        dc.b    ' KEPT. CANCEL UNDOES THIS ONE',0
+discard_title:          dc.b    'CANCEL',0
+discard_line:           dc.b    'THE CHANGES TO THIS PLAYER WOULD BE LOST.',0
+discard_question:       dc.b    'CANCEL THE CHANGES?',0
 position_title:         dc.b    'POSITION CHANGE',0
 keeper_line0:           dc.b    'AS A GOALKEEPER THE RATING IS ',0
 outfield_line0:         dc.b    'SKILLS ',0

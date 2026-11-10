@@ -156,8 +156,9 @@ native parent rebuilt through its restore callback on the return.
   after a verified `CUSTOMS.BAK`.
 - **Tactics**: every tactic is checked (positions on the pitch, no two
   players on one spot, mirror pairs, the base formation) before it is used;
-  `.TAC` files are exactly 370 bytes; slots the user loaded or edited are
-  kept in copies and restored after the game's reset of a new competition.
+  `.TAC` files are exactly 370 bytes; the slots the user saved in EDIT
+  TACTICS or loaded with a definition are kept in `TACTICS.CFG`, read at
+  start-up and restored after the game's reset of a new competition.
 - **Tournament definitions**: the rules of a DIY setup page are captured
   into a `.DEF` and applied to the page's scratch state; a definition's
   teams are put into the selection by the game's own team chooser path, so
@@ -199,6 +200,7 @@ section of `patch.py`. No byte of the game enters the built files.
 |---|---|
 | `CUSTOMS.EDT`, `CUSTOMS.BAK` | The custom set as the game writes it (a counted list of 684-byte team records) and its backup |
 | `NAME.TAC` | A tactic: the game's 370-byte record |
+| `TACTICS.CFG` | The kept user tactics: header `SWOSTAC1`, version, a mask of the kept slots USER A-F, six 370-byte records, CRC-32 |
 | `NAME.DEF` | A tournament definition: header `SWOSDEF1`, version, length, CRC-32; the database it was made with, the rules, the teams, the user tactics |
 | `DBASE.CFG`, `DBASE.BAK` | The edited set's manifest (`SWOSGRP1`): label, generation, the files of the set with length and CRC-32; the fingerprint is its CRC-32 |
 | `Tgggnnnn.GRP` | Generation `nnnn` of database group `ggg` (the game's group format), or of the cups' copies and the transfer pool (100-103) |

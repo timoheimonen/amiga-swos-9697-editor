@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.92b
+; SWOS 96-97 In-Game Editors V0.93b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -12,9 +12,22 @@
 ; or digit chooses the button whose label marks it with an underscore.
 ; Everything is drawn into both native display buffers.
 ;
+; The focus stays where the user left it while a screen runs: a dialog drawn
+; again (another page of a list, a changed state) keeps it, and so does the
+; dialog drawn again after a message or question that replaced it. A screen
+; that has just started, a dialog shown for the first time and every message
+; start at the descriptor's default; a button that can no longer be chosen
+; passes the focus to the default, else to the first button that can.
+;
 ; Calls (all registers but D0 preserved):
 ;   dialog_open    A0 = descriptor, D2.l = disabled mask (bit n = button n)
 ;                  -> D0.l = 0
+;   dialog_open_modal  the same for a message or question: always focused at
+;                  its default, and the focus of the dialog it replaces is
+;                  kept for that dialog's next dialog_open
+;   dialog_focus   D1.w = button index: the focus moves there -> D0.l = 0,
+;                  or -1 when the button cannot take it; flags set from D0
+;   dialog_focused -> D0.l = the button with the focus, -1 none
 ;   dialog_poll    D7.w = native menu event bits, D6.w = translated key
 ;                  -> D0.l = -1 while nothing is chosen, else the chosen
 ;                  button's code or the cancel code; flags set from D0

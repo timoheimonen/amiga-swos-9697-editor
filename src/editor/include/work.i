@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.92b
+; SWOS 96-97 In-Game Editors V0.93b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -49,7 +49,10 @@ DLG_BATCH               equ 316         ; word: 1 while paints are kept
 DLG_QUEUED              equ 318         ; word: paints kept
 DLG_QUEUE               equ 320         ; DLG_QUEUE_MAX (routine, argument) longs
 DLG_QUEUE_MAX           equ 16
-DLG_SIZE                equ DLG_QUEUE+DLG_QUEUE_MAX*8
+DLG_KEPT_DESCRIPTOR     equ DLG_QUEUE+DLG_QUEUE_MAX*8 ; long: the dialog a message replaced, 0 none
+DLG_KEPT_FOCUS          equ DLG_KEPT_DESCRIPTOR+4 ; word: its focus
+DLG_FRESH               equ DLG_KEPT_FOCUS+2 ; word: 1 until the running screen opens a dialog
+DLG_SIZE                equ DLG_FRESH+2
 
 ; Own screen host (resident/screen.s).
 WORK_SCREEN             equ WORK_DIALOG+DLG_SIZE
@@ -114,7 +117,9 @@ DB_CUP_ROW_SIZE         equ 24
 DB_CUP_ROWS             equ DB_CUP_KEYS+CUP_KEYS*2 ; CUP_MAX_TEAMS row labels
 DB_BAK_FAILED           equ DB_CUP_ROWS+CUP_MAX_TEAMS*DB_CUP_ROW_SIZE ; word: a SAVE of
                                         ; this session failed to write DBASE.BAK
-DB_SIZE                 equ DB_BAK_FAILED+2
+DB_FILTER               equ DB_BAK_FAILED+2 ; word: the division the group screen shows, -1 all
+DB_FILTER_TEXT          equ DB_FILTER+2 ; 16 bytes: the label of its button
+DB_SIZE                 equ DB_FILTER_TEXT+16
 DBM_MAIN                equ 0           ; the screen's own dialog
 DBM_TYPING              equ 1           ; the keyboard field takes the keys
 DBM_MESSAGE             equ 2           ; a message is open
@@ -167,11 +172,13 @@ TS_STRENGTH             equ 274         ; 56 bytes: the strength line of TEAM SE
 TS_LABELS               equ 330         ; TS_LABEL_COUNT labels of TS_LABEL_SIZE bytes
 TS_LABEL_SIZE           equ 56
 TS_LABEL_COUNT          equ 18
-TS_SIZE                 equ TS_LABELS+TS_LABEL_COUNT*TS_LABEL_SIZE
+TS_PICK_PAGE            equ TS_LABELS+TS_LABEL_COUNT*TS_LABEL_SIZE ; word: page of the nationality list
+TS_SIZE                 equ TS_PICK_PAGE+2
 TSM_MAIN                equ 0           ; the screen's own dialog
 TSM_TYPING              equ 1           ; the keyboard field takes the keys
-TSM_CONFIRM             equ 2           ; a YES/NO question is open
+TSM_CONFIRM             equ 2           ; a YES/NO question is open (CANCEL's, or TS_PENDING's)
 TSM_MESSAGE             equ 3           ; a message is open
+TSM_PICK                equ 4           ; the nationality list is open
 
 ; Messages and questions (editors/message.s).
 WORK_MESSAGE            equ WORK_TEAM_SCREEN+TS_SIZE
@@ -193,22 +200,29 @@ FLD_TEXT                equ 0           ; long: the buffer being typed into
 FLD_CAPACITY            equ 4           ; word: characters without the NUL
 FLD_BACKUP              equ 6           ; FLD_BACKUP_SIZE bytes: text before typing
 FLD_BACKUP_SIZE         equ 40
-FLD_SIZE                equ FLD_BACKUP+FLD_BACKUP_SIZE
+FLD_CURSOR              equ FLD_BACKUP+FLD_BACKUP_SIZE ; word: characters before the cursor
+FLD_SIZE                equ FLD_CURSOR+2
 FIELD_TYPING            equ 0           ; field_key results
 FIELD_KEPT              equ 1
 FIELD_CANCELLED         equ -1
 
-; Tactics (editors/tactics.s): the user-owned slots of the user tactics
-; and a copy of each, the result of the last tactic check and a line of
-; text for its messages.
+; Tactics (editors/tactics.s): the slots that hold the user's tactics now,
+; the result of the last tactic check, a line of text for its messages and
+; the image of TACTICS.CFG (tactic.i): the user's kept tactics, one copy
+; per slot, as the file holds them.
 WORK_TACTICS            equ WORK_FIELD+FLD_SIZE
 TT_OWNED                equ 0           ; word: bit n set while USER A+n is user-owned
 TT_CHECK                equ 2           ; word: TC_* of the last check
 TT_DETAIL               equ 4           ; three longs: its D1-D3
 TT_LINE                 equ 16          ; TT_LINE_SIZE bytes: a message line
 TT_LINE_SIZE            equ 56
-TT_COPIES               equ TT_LINE+TT_LINE_SIZE ; USER_TACTIC_SLOTS records
-TT_SIZE                 equ TT_COPIES+USER_TACTIC_SLOTS*TACTIC_SIZE
+TT_STATE                equ TT_LINE+TT_LINE_SIZE ; word: 1 after tactics_start
+TT_UNSAVED              equ TT_STATE+2  ; word: TACTICS.CFG does not hold the image
+TT_RESULT               equ TT_STATE+4  ; long: result of its last write
+TT_FILE                 equ TT_STATE+8  ; TF_SIZE bytes: the image
+TT_KEPT                 equ TT_FILE+TF_KEPT ; word: bit n set while USER A+n is kept
+TT_COPIES               equ TT_FILE+TF_RECORDS ; USER_TACTIC_SLOTS records
+TT_SIZE                 equ TT_FILE+TF_SIZE
 
 ; Tournament definitions (editors/definition.s, rules.s, defsave.s,
 ; defload.s): the rules and teams held for the DIY setup pages, the
@@ -249,6 +263,7 @@ DF_SIZE                 equ DF_BACKUP+FS_RECORD_SIZE
 DFS_APPLY               equ 0           ; bit: the rules wait for the page's init
 DFS_ARMED               equ 1           ; bit: CHOOSE TEAMS takes the teams held
 DFS_LOADED              equ 2           ; bit: a definition was loaded (type page)
+DFS_TACTICS             equ 3           ; bit: it installed tactics (kept afterwards)
 DFM_MAIN                equ 0           ; the screen's own dialog
 DFM_TYPING              equ 1           ; the keyboard field takes the keys
 DFM_MESSAGE             equ 2           ; a message is open

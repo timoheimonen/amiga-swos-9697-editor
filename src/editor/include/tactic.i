@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.92b
+; SWOS 96-97 In-Game Editors V0.93b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -32,4 +32,22 @@ TC_LABEL                equ 5           ; D1 = map, D2 = its label
 TC_PAIR                 equ 6           ; D1 = label, D2 = maps using it
 TC_BASE                 equ 7           ; D1 = base formation
 TC_LAST                 equ TC_BASE
+
+; TACTICS.CFG in the save directory: the user's tactics, which the editor
+; puts back into their slots at every start. Values are big-endian. A
+; record whose bit is clear in TF_KEPT is not used (zeros when the editor
+; writes it); a record whose bit is set passes tactic_check.
+TF_MAGIC_HIGH           equ 'SWOS'
+TF_MAGIC_LOW            equ 'TAC1'
+TF_VERSION_VALUE        equ 1
+TF_MAGIC                equ $00         ; 8 bytes
+TF_VERSION              equ $08         ; word
+TF_KEPT                 equ $0A         ; word: bit n set = USER A+n is kept
+TF_RECORDS              equ $0C         ; USER_TACTIC_SLOTS records
+TF_CRC32                equ TF_RECORDS+USER_TACTIC_SLOTS*TACTIC_SIZE ; long: CRC-32 of the bytes before it
+TF_SIZE                 equ TF_CRC32+4
+
+TACTICS_FILE_NAME       macro
+        dc.b    'TACTICS.CFG',0
+        endm
         endif

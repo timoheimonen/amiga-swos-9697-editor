@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.92b
+; SWOS 96-97 In-Game Editors V0.93b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -21,9 +21,9 @@
 ;                   when the screen opened and the values team OK keeps
 ;                   (the original record's and IMPORT's), so a user slot
 ;                   from the data can be chosen again; a
-;                   user slot is shown by its current name, with the note
-;                   that the same tactic must be loaded into that slot
-;                   after a restart
+;                   user slot is shown by its current name, with a note
+;                   when it holds no tactic of the user or its tactic
+;                   could not be written to the kept file
 ;   lineup rows     one row per role: roles 1-11 start, 12-16 are the
 ;                   substitutes. Fire on two rows swaps them: their places
 ;                   in the lineup (SWAP PLACES) or their shirt numbers
@@ -31,7 +31,7 @@
 ;                   numbers stay 1-16, each once
 ;   OK              keeps the changes when role 1 is a goalkeeper
 ;   CANCEL, Esc     restores the working copy as it was when the screen
-;                   opened
+;                   opened; asks first when that loses a change
 
         include "swos2.i"
         include "slave.i"
@@ -44,9 +44,10 @@
         xdef    settings_screen
         xref    dialog_open, dialog_poll, dialog_set, dialog_draw
         xref    editor_base, editor_image
-        xref    message_title, message_lines, message_open, message_poll
+        xref    message_title, message_line, message_lines, message_open, message_poll
         xref    text_copy, text_copy_max, text_decimal, text_pad
-        xref    team_screen_save, team_screen_cancel
+        xref    team_screen_save, team_screen_cancel, team_screen_changed
+        xref    tactics_slot_note
         xref    ok_text, cancel_text
 
 TOP                     equ 8
@@ -107,10 +108,15 @@ settings_open:
 ; ---------------------------------------------------------------------------
 settings_tick:
         lea     WORK_TEAM_SCREEN(a5),a4
-        cmpi.w  #TSM_MESSAGE,TS_MODE(a4)
-        bne.s   .main
-        bsr.l   message_poll
+        cmpi.w  #TSM_MAIN,TS_MODE(a4)
+        beq.s   .main
+        bsr.l   message_poll            ; a message or CANCEL's question
         bmi.s   .stay
+        cmpi.w  #TSM_CONFIRM,TS_MODE(a4)
+        bne.s   .shown
+        cmpi.w  #MSG_YES,d0
+        beq.l   team_screen_cancel      ; the screen closes
+.shown:
         move.w  #TSM_MAIN,TS_MODE(a4)
         bsr.w   show_settings
         bra.s   .stay
@@ -130,8 +136,27 @@ settings_tick:
         cmpi.w  #CODE_OK,d1
         beq.w   settings_ok
         cmpi.w  #CODE_CANCEL,d1
-        beq.l   team_screen_cancel
+        beq.s   settings_cancel
 .stay:
+        moveq   #0,d0
+        rts
+
+; settings_cancel: CANCEL or Esc. Without a change the screen closes; with
+; one it asks first.
+settings_cancel:
+        bsr.l   team_screen_changed
+        beq.l   team_screen_cancel
+        lea     discard_title(pc),a0
+        bsr.l   message_title
+        lea     discard_line(pc),a0
+        moveq   #0,d0
+        bsr.l   message_line
+        lea     discard_question(pc),a0
+        moveq   #2,d0
+        bsr.l   message_line
+        moveq   #MSG_ASK,d0
+        bsr.l   message_open
+        move.w  #TSM_CONFIRM,TS_MODE(a4)
         moveq   #0,d0
         rts
 
@@ -501,9 +526,11 @@ build_tactic:
         clr.b   (a1)
         lea     TS_DERIVED(a4),a1
         clr.b   (a1)
-        cmpi.w  #TACTIC_USER_FIRST,d0
+        subi.w  #TACTIC_USER_FIRST,d0
         bcs.s   .done
-        lea     note_text(pc),a0
+        bsr.l   tactics_slot_note       ; D0 = note, or 0
+        beq.s   .done
+        movea.l d0,a0
         bsr.l   text_copy
 .done:
         movem.l (sp)+,d0-d1/a0-a1
@@ -677,7 +704,6 @@ skills_text:            dc.b    '  SKILLS ',0
 specials_text:          dc.b    '  SPECIAL ',0
 title_text_short:       dc.b    'TEAM SETTINGS',0
 tactic_text:            dc.b    'DEFAULT TACTIC      <',0
-note_text:              dc.b    'AFTER A RESTART LOAD THE SAME .TAC INTO THIS SLOT',0
 number_text:            dc.b    '  NO ',0
 places_text:            dc.b    'SWAP _PLACES',0
 numbers_text:           dc.b    'SWAP _NUMBERS',0
@@ -685,6 +711,9 @@ status_places:          dc.b    'FIRE ON TWO ROWS SWAPS THEIR PLACES IN THE LINE
 status_numbers:         dc.b    'FIRE ON TWO ROWS SWAPS THEIR SHIRT NUMBERS',0
 status_second:          dc.b    'NOW CHOOSE THE SECOND ROW',0
 status_no_keeper:       dc.b    'ROLE 1 MUST BE A GOALKEEPER',0
+discard_title:          dc.b    'CANCEL',0
+discard_line:           dc.b    'THE CHANGES ON THIS SCREEN WOULD BE LOST.',0
+discard_question:       dc.b    'CANCEL THE CHANGES?',0
 no_keeper_lines:        dc.b    'ROLE 1 STARTS IN GOAL.',0
                         dc.b    'SWAP A GOALKEEPER INTO ROLE 1 FIRST.',0
                         dc.b    0
