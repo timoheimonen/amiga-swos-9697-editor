@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.93b
+; SWOS 96-97 In-Game Editors V0.94b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -38,7 +38,7 @@
         xref    dialog_open, dialog_poll, dialog_draw
         xref    message_title, message_line, message_lines
         xref    message_open, message_poll, message_storage_reason
-        xref    definition_check_file, definition_identity
+        xref    definition_check_file, definition_identity, db_identity_old
         xref    definition_listed_teams, definition_problem_lines, definition_team_missing
         xref    tactics_owned, tactics_install, tactics_keep
         xref    slot_list
@@ -474,6 +474,9 @@ load_row:
         dbne    d0,.compare
         lea     DI_CUSTOM_CRC(sp),sp
         beq.w   load_teams
+        lea     WORK_IO_BUFFER+DEF_HEADER_SIZE(a5),a2
+        bsr.l   db_identity_old         ; saved by V0.93b or earlier with this set
+        beq.w   load_teams
         bra.w   ask_database
 .size:
         moveq   #DC_SIZE,d0
@@ -538,7 +541,7 @@ ask_database:
         bra.w   open_question
 
 ; database_text: A2 = identity, appended at A1: ORIGINAL DATABASE, or the
-; set label (EDITED without one) and the manifest CRC-32.
+; set label (EDITED without one) and the set's fingerprint.
 database_text:
         movem.l d0/a0,-(sp)
         lea     original_text(pc),a0
@@ -555,7 +558,7 @@ database_text:
         bsr.l   text_copy
 .crc:
         move.b  #' ',(a1)+
-        move.l  DI_MANIFEST_CRC(a2),d0
+        move.l  DI_SET_CRC(a2),d0
         bsr.l   text_hex32
         bra.s   .done
 .copy:

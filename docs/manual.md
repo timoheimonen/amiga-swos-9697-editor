@@ -99,7 +99,10 @@ Besides EDIT DATABASE nothing in the main menu changes. While an edited
 database is in use, a line below LOAD OLD COMPETITION shows it with its
 label and fingerprint, for example `DATABASE: SEASON 26/27 1A2B3C4D`
 (`DATABASE: EDITED 1A2B3C4D` without a label). Two machines whose lines show
-the same fingerprint play with the same database. If a set that was in use
+the same fingerprint play with the same database. The fingerprint covers
+the label and the set's files, not how often the set was saved: the same
+label and the same files show the same fingerprint on every install. If a
+set that was in use
 at the last start cannot be used, the line says why instead, for example
 `DATABASE OFF: T0080002.GRP MISSING`, and the game uses its original
 database.
@@ -426,12 +429,12 @@ file is ever deleted. Run them while the game is not running.
 | `python3 patch.py install "Disk 1.adf" "Disk 2.adf" --output SWOS [--machine NAME] [--set FILE ...] [--label TEXT]` | A new install; with `--set`, an edited database (a season pack, CSV or group JSON files) in use from the start |
 | `python3 patch.py list SWOS [--json]` | What the save directory holds: the machine, the custom set, the edited database, tactics, the kept user tactics, definitions (with their backups), saves with their databases, the match log, other files, with every fingerprint |
 | `python3 patch.py check FILE ...` | Checks `.TAC`, `.DEF` (and `NAME.DEF.BAK`), `CUSTOMS.EDT`, `DBASE.CFG`, `TACTICS.CFG`, link files, `MATCHES.LOG` and `MACHINE.CFG` as the game and the editors do |
-| `python3 patch.py export SWOS OUT` | The custom set as JSON and CSV, the tactics, the kept user tactics and definitions as JSON, the edited database's groups as JSON, and saves, links and the manifest as JSON for reading only |
-| `python3 patch.py import SWOS FILE ... [--replace] [--dry-run]` | JSON and CSV files of export, `.TAC` and `.DEF` files into the save directory, checked as the editors check them; a definition replaced is kept as `NAME.DEF.BAK` |
-| `python3 patch.py db export SWOS OUT` | Every database group as JSON, `players.csv`, `teams.csv` (with the strength columns) and `cups.csv` |
-| `python3 patch.py db import SWOS FILE ... [--label TEXT] [--dry-run]` | CSV, group JSON or a season pack into a new version of the edited set |
-| `python3 patch.py db diff SWOS PACK.json [--label TEXT]` | A season pack: only the fields that differ from the original database |
-| `python3 patch.py db apply SWOS PACK.json [--dry-run]` | A season pack into a new version of the set |
+| `python3 patch.py export SWOS OUT [--semicolon]` | The custom teams as JSON and CSV (the game's own while nothing was saved), the tactics, the kept user tactics and definitions as JSON, the edited database's groups as JSON, and saves, links and the manifest as JSON for reading only |
+| `python3 patch.py import SWOS FILE_OR_DIRECTORY ... [--replace] [--dry-run]` | A directory that export or db export wrote, or single files: the JSON and CSV files of export and db export, season packs, `.TAC` and `.DEF` files; checked as the editors check them; a definition replaced is kept as `NAME.DEF.BAK` |
+| `python3 patch.py db export SWOS OUT [--semicolon]` | Every database group as JSON, `players.csv`, `teams.csv` (with the strength columns) and `cups.csv` |
+| `python3 patch.py db import SWOS FILE_OR_DIRECTORY ... [--label TEXT] [--dry-run]` | CSV, group JSON or a season pack (or the directory db export wrote) into a new version of the edited set |
+| `python3 patch.py db diff SWOS PACK.json [--label TEXT]` | A season pack: only the fields that differ from the original database; prints the fingerprint every install of the pack shows |
+| `python3 patch.py db apply SWOS PACK.json [--dry-run]` | A season pack into a new version of the set: the database becomes exactly the pack's |
 | `python3 patch.py db check SWOS` | Checks the set as the editors do |
 | `python3 patch.py db switch SWOS on\|off` | USE EDITED DATABASE at the next start (on only for a set whose files are all there and sound) |
 | `python3 patch.py report SWOS_OR_SAVES ... --output OUT` | Standings, cup results and scorers of `.DIY`, `.PRE` and `.SEA` saves as CSV and Markdown |
@@ -440,7 +443,36 @@ file is ever deleted. Run them while the game is not running.
 
 With `--dry-run`, `import`, `db import` and `db apply` check everything
 and list what they would write and change (every team and player field
-with its old and new value), then stop: nothing is written.
+with its old and new value), then stop: nothing is written. Run it before
+a tournament to see what a file changes.
+
+A season pack describes the whole database: `db apply` (and a pack given
+to `db import` or `import`) makes every group and cup the pack does not
+name the original one again. The command lists such groups (`group 0: the
+original database's again`); their files stay in the save directory. After
+a new version of the set was written, the command also says when USE
+EDITED DATABASE is still off.
+
+### One directory out and in again
+
+`export` writes everything the save directory holds into a new directory,
+and `import` takes that directory back, on the same install or on another:
+
+```sh
+python3 patch.py export SWOS out
+python3 patch.py import SWOS2 out --dry-run
+python3 patch.py import SWOS2 out
+python3 patch.py db switch SWOS2 on
+```
+
+The custom teams, tactics, kept user tactics, definitions and the edited
+database with its label arrive; saves, links and the manifest are for
+reading only and are left out. The second install then holds the same
+data. The directory holds the teams twice, as JSON and as CSV: edit either, or
+both. What the CSV files change in the install goes on top of the JSON
+files, so a file you did not touch never takes an edit of the other one
+back. `db import` takes the directory `db export` wrote in the same way.
+An install directory itself is not a source: export it first.
 
 ### CSV files
 
@@ -456,6 +488,23 @@ the file, row, column and reason, and nothing is written.
 
 The custom set has the same files as `customs-players.csv` and
 `customs-teams.csv` (`export` and `import`).
+
+A database file is known by the end of its name (`...players.csv`,
+`...teams.csv`, `...cups.csv`; for the custom teams `...customs-players.csv`
+and `...customs-teams.csv`), so every participant can send an own file
+(`anna-players.csv`, `ben-players.csv`) and all of them go in with one
+command, in the order given.
+
+**Spreadsheets.** The files are plain CSV with commas. A spreadsheet of a
+locale that writes decimal commas (Finnish, German and many others) opens
+such a file in one column: export with `--semicolon` there, or use the
+spreadsheet's text import. Save as CSV again; `import` and `db import`
+read commas, semicolons or tabs, with or without a byte order mark, and
+skip empty rows. A new name may be typed in small letters and is stored
+in capitals without the spaces around it (the game shows A-Z, 0-9, space
+and `- / . ' ( )`); nationality labels and positions may be in small
+letters too. Leave the key columns and the column headings as they are; a
+column the files do not have is refused.
 
 ### Example files
 
@@ -529,6 +578,21 @@ python3 patch.py db diff ORGANISER season-26-27.json
 contains no other data of the game, so it can be shared. Editing in the
 game's EDIT DATABASE and then `db diff` gives the same kind of pack.
 
+`db diff` prints the line `every install of this pack shows SEASON 26/27
+...` with the fingerprint every machine of step 2 will show, however many
+versions of a set it saved before. The organiser's own install can still
+show another one: a name typed in the game keeps the end of a longer
+earlier name in the file, after the name's end, and a pack does not carry
+such bytes. `db diff` then says so, and applying the pack to the own
+install makes it the pack's as well:
+
+```sh
+python3 patch.py db apply ORGANISER season-26-27.json
+```
+
+Do this before making the tournament's definition (step 3), so that it
+loads on every machine without a question.
+
 ### 2. Install it on every machine
 
 ```sh
@@ -544,9 +608,21 @@ existing install takes a pack as a new version of its set, switched on for
 the next start:
 
 ```sh
+python3 patch.py db apply SWOS season-26-27.json --dry-run
 python3 patch.py db apply SWOS season-26-27.json
 python3 patch.py db switch SWOS on
 ```
+
+The database of that install becomes exactly the pack's (the dry run lists
+the groups that are the original ones again), and it shows the fingerprint
+of the new installs, whatever versions of a set it saved before.
+
+Every machine of a tournament needs the same version of the editors:
+V0.93b and earlier showed another code for the same set. A definition
+such a version saved still loads without a question on the install whose
+set it was made with; the matches it logged keep the code they were
+written with, so `results` over matches of both versions says that they
+were played with different databases.
 
 ### 3. Share the tournament definition
 

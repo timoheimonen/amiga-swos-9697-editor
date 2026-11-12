@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SWOS 96-97 In-Game Editors V0.93b
+# SWOS 96-97 In-Game Editors V0.94b
 # Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 # Licensed under the MIT License. See the LICENSE file for details.
 """Database mode on the host: the edited database set, link files, CSV and
@@ -309,8 +309,23 @@ def encode_manifest(manifest: Manifest, version: int = MANIFEST_VERSION) -> byte
 
 
 def manifest_crc(raw: bytes) -> int:
-    """The manifest's fingerprint: its CRC-32 field."""
+    """The manifest's own CRC-32 field: the check of the file and of a
+    link's copy. It covers the generation numbers; the fingerprint shown to
+    users is data_fingerprint."""
     return struct.unpack_from(">I", raw, M_CRC)[0]
+
+
+def data_fingerprint(raw: bytes) -> int:
+    """The set's fingerprint as the editors and patch.py show it: the
+    CRC-32 of the manifest's label and of its entries with every generation
+    taken as zero. Two sets with the same label and the same files show the
+    same fingerprint, however many versions each install saved before."""
+    count = struct.unpack_from(">H", raw, M_COUNT)[0]
+    data = bytearray(raw[M_LABEL:M_LABEL + LABEL_SIZE])
+    for index in range(count):
+        entry = raw[MANIFEST_HEADER + index * ENTRY_SIZE:MANIFEST_HEADER + (index + 1) * ENTRY_SIZE]
+        data += entry[:2] + b"\0\0" + entry[4:]
+    return crc32(bytes(data))
 
 
 def check_manifest(raw: bytes) -> tuple[int, int]:
@@ -377,7 +392,8 @@ def manifest_document(raw: bytes) -> dict:
     def kind(code: int) -> str:
         return CUP_NAMES.get(code, "POOLPLYR" if code == COPY_POOL else "GROUP")
     return {"format": "SWOSGRP1", "version": manifest_version(raw), "generation": manifest.generation,
-            "label": manifest.label, "crc32": f"{manifest_crc(raw):08X}",
+            "label": manifest.label, "fingerprint": f"{data_fingerprint(raw):08X}",
+            "crc32": f"{manifest_crc(raw):08X}",
             "groups": [{"group": e.group, "kind": kind(e.group), "file": e.name, "records": e.count,
                         "length": e.length, "crc32": f"{e.crc:08X}"} for e in manifest.entries]}
 
@@ -989,6 +1005,21 @@ def plan_set(directory: Path, originals: dict[int, bytes], groups: dict[int, byt
     return SetPlan(manifest, new_files, current_raw, encode_manifest(manifest))
 
 
+def groups_fingerprint(base: Base, groups: dict[int, bytes], label: str,
+                       lists: dict[int, list[tuple[int, int]]] | None = None) -> int | None:
+    """The fingerprint (data_fingerprint) of a set with these groups,
+    participant lists and label, as every install that holds exactly them
+    shows it. None when nothing differs from the 96/97 database."""
+    full = {**base.groups, **groups}
+    declared = {group: raw for group, raw in full.items() if raw != base.groups[group]}
+    declared.update(build_copies(base, full, lists))
+    if not declared:
+        return None
+    entries = [Entry(code, 1, len(raw) // (POOL_ENTRY_SIZE if code == COPY_POOL else TEAM_SIZE), len(raw), crc32(raw))
+               for code, raw in sorted(declared.items())]
+    return data_fingerprint(encode_manifest(Manifest(1, label, entries)))
+
+
 def write_install(directory: Path, base: Base, groups: dict[int, bytes], label: str, *,
                   lists: dict[int, list[tuple[int, int]]] | None = None, switch: bool = True) -> Manifest | None:
     """A set written into the save directory of an install: the groups,
@@ -1012,6 +1043,8 @@ def _put_text(record: bytearray, offset: int, size: int, value: str, what: str) 
     """A changed text: NUL-terminated and zero-padded within its span; an
     unchanged text keeps its whole span, the bytes after its NUL included, so
     an unchanged record stays byte for byte the game's."""
+    if not isinstance(value, str):
+        raise ValueError(f"{what}: a text is expected")
     if _text(bytes(record[offset:offset + size])) == value:
         return
     raw = value.encode("latin-1", "replace")
@@ -1130,15 +1163,29 @@ KIT_COLUMNS = ("pattern", "shirt", "shirt2", "shorts", "socks")
 CUP_COLUMNS = ["cup", "place", "group", "ordinal", "team"]
 
 
-def _csv_text(rows: list[list]) -> str:
+CSV_DELIMITERS = {"comma": ",", "semicolon": ";", "tab": "\t"}
+
+
+def _csv_text(rows: list[list], delimiter: str = ",") -> str:
     buffer = io.StringIO()
-    writer = csv.writer(buffer, lineterminator="\n")
+    writer = csv.writer(buffer, delimiter=delimiter, lineterminator="\n")
     writer.writerows(rows)
     return buffer.getvalue()
 
 
+def csv_text(raw: bytes) -> str:
+    """The text of a CSV file as a spreadsheet saved it: UTF-8, with or
+    without a byte order mark, or else Latin-1."""
+    if raw.startswith(b"\xef\xbb\xbf"):
+        raw = raw[3:]
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("latin-1")
+
+
 def export_csv(groups: dict[int, bytes], labels: list[str], *, group_list: Iterable[int] = SUPPORTED_GROUPS,
-               ) -> tuple[str, str]:
+               delimiter: str = ",") -> tuple[str, str]:
     """(players.csv, teams.csv) of the groups, sorted by group, ordinal, slot."""
     players, teams = [PLAYER_COLUMNS], [TEAM_COLUMNS + STRENGTH_COLUMNS]
     for group in group_list:
@@ -1155,24 +1202,25 @@ def export_csv(groups: dict[int, bytes], labels: list[str], *, group_list: Itera
                 players.append([group, ordinal, fields["name"], slot, p["shirt"], p["name"],
                                 labels[p["nationality"]], p["position"], p["appearance"]]
                                + p["skills"] + p["specialties"] + ["" if p["rating"] is None else p["rating"]])
-    return _csv_text(players), _csv_text(teams)
+    return _csv_text(players, delimiter), _csv_text(teams, delimiter)
 
 
-def export_customs_csv(customs: bytes, labels: list[str]) -> tuple[str, str]:
+def export_customs_csv(customs: bytes, labels: list[str], delimiter: str = ",") -> tuple[str, str]:
     """(customs-players.csv, customs-teams.csv) of the custom set
     CUSTOMS.EDT, in the layouts of players.csv and teams.csv with group 72,
     the strength columns included."""
-    return export_csv({CUSTOM_GROUP: customs}, labels, group_list=(CUSTOM_GROUP,))
+    return export_csv({CUSTOM_GROUP: customs}, labels, group_list=(CUSTOM_GROUP,), delimiter=delimiter)
 
 
-def export_cups_csv(lists: dict[int, list[tuple[int, int]]], groups: dict[int, bytes]) -> str:
+def export_cups_csv(lists: dict[int, list[tuple[int, int]]], groups: dict[int, bytes],
+                    delimiter: str = ",") -> str:
     """cups.csv: the participants of the three European club cups in place
     order; team is informative."""
     rows: list[list] = [CUP_COLUMNS]
     for code in CUP_CODES:
         for place, (group, ordinal) in enumerate(lists[code], start=1):
             rows.append([CUP_NAMES[code], place, group, ordinal, _text(group_record(groups, (group, ordinal))[5:0x16])])
-    return _csv_text(rows)
+    return _csv_text(rows, delimiter)
 
 
 class CsvError(ValueError):
@@ -1182,7 +1230,7 @@ class CsvError(ValueError):
 
 def _int_cell(file: str, row: int, column: str, text: str, low: int, high: int) -> int:
     try:
-        value = int(text, 10)
+        value = int(text.strip(), 10)
     except ValueError:
         raise CsvError(file, row, column, f"{text!r} is not a number") from None
     if not low <= value <= high:
@@ -1190,12 +1238,36 @@ def _int_cell(file: str, row: int, column: str, text: str, low: int, high: int) 
     return value
 
 
+def _text_cell(file: str, row: int, column: str, text: str, current: str, size: int) -> str:
+    """A name cell: the text there now stays as it is; a new one is taken
+    without the spaces around it and in capitals, and has to fit the field
+    and the game's font."""
+    if text == current:
+        return text
+    value = text.strip().upper()
+    if len(value) >= size:
+        raise CsvError(file, row, column, f"{value!r} has {len(value)} characters, at most {size - 1} fit")
+    odd = sorted({c for c in value if c not in TEXT_GLYPHS})
+    if odd:
+        raise CsvError(file, row, column, f"{value!r} has a character the game cannot show ({' '.join(odd)}); "
+                                          f"it shows A-Z 0-9 space - / . ' ( )")
+    return value
+
+
 def _records(file: str, text: str, columns: list[str], keys: tuple[str, ...]):
-    reader = csv.reader(io.StringIO(text))
+    """(row number, cells by column) of a CSV file as export wrote it or as
+    a spreadsheet saved it again: separated by commas, semicolons or tabs
+    (whichever the header row has most of), rows without any value skipped."""
+    text = text.lstrip("\ufeff")
+    first = text.split("\n", 1)[0]
+    delimiter = max(CSV_DELIMITERS.values(), key=first.count)
+    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
     try:
-        header = next(reader)
+        header = [column.strip().lower() for column in next(reader)]
     except StopIteration:
         raise CsvError(file, 1, "-", "the file is empty") from None
+    while header and not header[-1]:
+        header.pop()
     for column in header:
         if column not in columns:
             raise CsvError(file, 1, column, "unknown column")
@@ -1205,8 +1277,10 @@ def _records(file: str, text: str, columns: list[str], keys: tuple[str, ...]):
         if key not in header:
             raise CsvError(file, 1, key, "the key column is missing")
     for number, cells in enumerate(reader, start=2):
-        if not cells:
+        if not any(cell.strip() for cell in cells):
             continue
+        while len(cells) > len(header) and not cells[-1].strip():
+            cells.pop()
         if len(cells) != len(header):
             raise CsvError(file, number, "-", f"{len(cells)} cells, the header has {len(header)}")
         yield number, dict(zip(header, cells))
@@ -1224,90 +1298,148 @@ def _team_at(groups: dict[int, bytearray], file: str, row: int, cells: dict) -> 
 def import_csv(base: dict[int, bytes], originals: dict[int, bytes], labels: list[str],
                players_csv: str | None = None, teams_csv: str | None = None,
                players_file: str = "players.csv", teams_file: str = "teams.csv") -> dict[int, bytes]:
-    """The groups after applying the CSV files to base (original groups or
-    an existing set). Each file changes only the columns it carries; the
-    result is checked per group as the editors check it."""
+    """The groups after applying one players.csv and one teams.csv (either
+    may be None) to base; see import_csv_files."""
+    sources = []
+    if teams_csv is not None:
+        sources.append(("teams", teams_file, teams_csv))
+    if players_csv is not None:
+        sources.append(("players", players_file, players_csv))
+    return import_csv_files(base, originals, labels, sources)
+
+
+def import_csv_files(base: dict[int, bytes], originals: dict[int, bytes], labels: list[str],
+                     sources: list[tuple[str, str, str]]) -> dict[int, bytes]:
+    """The groups after applying CSV files to base (original groups or an
+    existing set). sources lists (kind, file name, text) with the kind
+    "teams" or "players"; every teams file is applied before the players
+    files, each kind in the order given, so several people's files can go
+    in together. Each file changes only the columns it carries; the result
+    is checked per group as the editors check it."""
     groups = {g: bytearray(raw) for g, raw in base.items()}
     nationality = {label: code for code, label in enumerate(labels)}
-    if teams_csv is not None:
-        for row, cells in _records(teams_file, teams_csv, TEAM_COLUMNS + STRENGTH_COLUMNS, ("group", "ordinal")):
-            group, ordinal, data = _team_at(groups, teams_file, row, cells)
-            team = bytearray(data[2 + ordinal * TEAM_SIZE:2 + (ordinal + 1) * TEAM_SIZE])
-            fields: dict = {}
-            for column, text in cells.items():
-                if column in ("group", "ordinal") or column in STRENGTH_COLUMNS:
-                    continue
-                if column in ("name", "coach"):
-                    fields[column] = text
-                elif column == "division":
-                    fields["division"] = _int_cell(teams_file, row, column, text, 0, 255)
-                elif column == "tactic":
-                    fields["tactic"] = _int_cell(teams_file, row, column, text, 0, 17)
-                else:
-                    side, part = column.split("_", 1)
-                    kit = fields.setdefault(f"{side}_kit", list(team[0x1A if side == "home" else 0x1F:][:5]))
-                    high = 3 if part == "pattern" else 9
-                    kit[KIT_COLUMNS.index(part)] = _int_cell(teams_file, row, column, text, 0, high)
-            try:
-                set_team_fields(team, fields, f"group {group} team {ordinal}")
-            except ValueError as exc:
-                raise CsvError(teams_file, row, "-", str(exc)) from None
-            data[2 + ordinal * TEAM_SIZE:2 + (ordinal + 1) * TEAM_SIZE] = team
-    if players_csv is not None:
-        for row, cells in _records(players_file, players_csv, PLAYER_COLUMNS, ("group", "ordinal", "slot")):
-            group, ordinal, data = _team_at(groups, players_file, row, cells)
-            slot = _int_cell(players_file, row, "slot", cells["slot"], 0, 15)
-            team = bytearray(data[2 + ordinal * TEAM_SIZE:2 + (ordinal + 1) * TEAM_SIZE])
-            current = player_fields(team[PLAYERS + slot * PLAYER_SIZE:PLAYERS + (slot + 1) * PLAYER_SIZE])
-            fields = {}
-            for column, text in cells.items():
-                if column in ("group", "ordinal", "slot", "team"):
-                    continue
-                if column == "name":
-                    fields["name"] = text
-                elif column == "shirt":
-                    fields["shirt"] = _int_cell(players_file, row, column, text, 1, 16)
-                elif column == "nationality":
-                    if text not in nationality:
-                        raise CsvError(players_file, row, column, f"{text!r} is not a nationality label")
-                    fields["nationality"] = nationality[text]
-                elif column == "position":
-                    if text not in POSITIONS:
-                        raise CsvError(players_file, row, column, f"{text!r} is not one of {' '.join(POSITIONS)}")
-                    fields["position"] = text
-                elif column == "appearance":
-                    fields["appearance"] = _int_cell(players_file, row, column, text, 0, 2)
-                elif column in SKILLS:
-                    fields.setdefault("skills", list(current["skills"]))[SKILLS.index(column)] = \
-                        _int_cell(players_file, row, column, text, 0, 7)
-                elif column.endswith("_special"):
-                    fields.setdefault("specialties", list(current["specialties"]))[
-                        SKILLS.index(column[:-8])] = _int_cell(players_file, row, column, text, 0, 1)
-                elif column == "rating":
-                    fields["rating"] = None if text == "" else _int_cell(players_file, row, column, text, 0, 40)
-            position = fields.get("position", current["position"])
-            if "rating" in fields:
-                if position != "G":
-                    rating = fields.pop("rating")
-                    if rating is not None:
-                        raise CsvError(players_file, row, "rating",
-                                       "an outfield rating is the sum of the skills; leave it empty")
-                elif fields["rating"] is None:
-                    raise CsvError(players_file, row, "rating", "a goalkeeper needs a rating")
-            try:
-                set_player_fields(team, slot, fields, f"group {group} team {ordinal} slot {slot}")
-            except ValueError as exc:
-                raise CsvError(players_file, row, "-", str(exc)) from None
-            data[2 + ordinal * TEAM_SIZE:2 + (ordinal + 1) * TEAM_SIZE] = team
+    for kind in ("teams", "players"):
+        for source_kind, file, text in sources:
+            if source_kind == kind:
+                (_apply_teams_csv if kind == "teams" else _apply_players_csv)(groups, nationality, file, text)
     result = {g: bytes(raw) for g, raw in groups.items()}
     pool = original_pool(originals)
+    files = ", ".join(dict.fromkeys(file for _, file, _ in sources))
     for group, raw in result.items():
         if raw != base[group]:
             problems = validate_group(group, raw, originals[group], pool, base[group])
             if problems:
-                raise ValueError(f"{players_file if players_csv is not None else teams_file}: "
-                                 + "; ".join(problems[:5]))
+                raise ValueError(f"{files}: " + "; ".join(problems[:5]))
     return result
+
+
+def _apply_teams_csv(groups: dict[int, bytearray], nationality: dict[str, int], file: str, text: str) -> None:
+    for row, cells in _records(file, text, TEAM_COLUMNS + STRENGTH_COLUMNS, ("group", "ordinal")):
+        group, ordinal, data = _team_at(groups, file, row, cells)
+        team = bytearray(data[2 + ordinal * TEAM_SIZE:2 + (ordinal + 1) * TEAM_SIZE])
+        current = team_fields(bytes(team))
+        fields: dict = {}
+        for column, text_cell in cells.items():
+            if column in ("group", "ordinal") or column in STRENGTH_COLUMNS:
+                continue
+            if column == "name":
+                fields["name"] = _text_cell(file, row, column, text_cell, current["name"], 17)
+            elif column == "coach":
+                fields["coach"] = _text_cell(file, row, column, text_cell, current["coach"], 23)
+            elif column == "division":
+                fields["division"] = _int_cell(file, row, column, text_cell, 0, 255)
+            elif column == "tactic":
+                fields["tactic"] = _int_cell(file, row, column, text_cell, 0, 17)
+            else:
+                side, part = column.split("_", 1)
+                kit = fields.setdefault(f"{side}_kit", list(team[0x1A if side == "home" else 0x1F:][:5]))
+                high = 3 if part == "pattern" else 9
+                kit[KIT_COLUMNS.index(part)] = _int_cell(file, row, column, text_cell, 0, high)
+        try:
+            set_team_fields(team, fields, f"group {group} team {ordinal}")
+        except ValueError as exc:
+            raise CsvError(file, row, "-", str(exc)) from None
+        data[2 + ordinal * TEAM_SIZE:2 + (ordinal + 1) * TEAM_SIZE] = team
+
+
+def _apply_players_csv(groups: dict[int, bytearray], nationality: dict[str, int], file: str, text: str) -> None:
+    for row, cells in _records(file, text, PLAYER_COLUMNS, ("group", "ordinal", "slot")):
+        group, ordinal, data = _team_at(groups, file, row, cells)
+        slot = _int_cell(file, row, "slot", cells["slot"], 0, 15)
+        team = bytearray(data[2 + ordinal * TEAM_SIZE:2 + (ordinal + 1) * TEAM_SIZE])
+        current = player_fields(team[PLAYERS + slot * PLAYER_SIZE:PLAYERS + (slot + 1) * PLAYER_SIZE])
+        fields: dict = {}
+        for column, text_cell in cells.items():
+            if column in ("group", "ordinal", "slot", "team"):
+                continue
+            value = text_cell.strip()
+            if column == "name":
+                fields["name"] = _text_cell(file, row, column, text_cell, current["name"], 23)
+            elif column == "shirt":
+                fields["shirt"] = _int_cell(file, row, column, value, 1, 16)
+            elif column == "nationality":
+                label = value if value in nationality else value.upper()
+                if label not in nationality:
+                    raise CsvError(file, row, column, f"{value!r} is not a nationality label of the game "
+                                                      "(three letters, as export writes them)")
+                fields["nationality"] = nationality[label]
+            elif column == "position":
+                if value.upper() not in POSITIONS:
+                    raise CsvError(file, row, column, f"{value!r} is not one of {' '.join(POSITIONS)}")
+                fields["position"] = value.upper()
+            elif column == "appearance":
+                fields["appearance"] = _int_cell(file, row, column, value, 0, 2)
+            elif column in SKILLS:
+                fields.setdefault("skills", list(current["skills"]))[SKILLS.index(column)] = \
+                    _int_cell(file, row, column, value, 0, 7)
+            elif column.endswith("_special"):
+                fields.setdefault("specialties", list(current["specialties"]))[
+                    SKILLS.index(column[:-8])] = _int_cell(file, row, column, value, 0, 1)
+            elif column == "rating":
+                fields["rating"] = None if value == "" else _int_cell(file, row, column, value, 0, 40)
+        position = fields.get("position", current["position"])
+        if "rating" in fields:
+            if position != "G":
+                rating = fields.pop("rating")
+                if rating is not None:
+                    raise CsvError(file, row, "rating",
+                                   "an outfield rating is the sum of the skills; leave it empty")
+            elif fields["rating"] is None:
+                raise CsvError(file, row, "rating", "a goalkeeper needs a rating")
+        try:
+            set_player_fields(team, slot, fields, f"group {group} team {ordinal} slot {slot}")
+        except ValueError as exc:
+            raise CsvError(file, row, "-", str(exc)) from None
+        data[2 + ordinal * TEAM_SIZE:2 + (ordinal + 1) * TEAM_SIZE] = team
+
+
+def carry_changes(before: dict[int, bytes], after: dict[int, bytes], onto: dict[int, bytes]) -> dict[int, bytes]:
+    """onto with every team and player field in which after differs from
+    before: the changes of one view of the teams (CSV files against the
+    install) put on top of another view (the JSON files of the same
+    export), so an unchanged view never takes the other's edits back."""
+    result = {group: bytearray(raw) for group, raw in onto.items()}
+    for group, raw in after.items():
+        if raw == before[group]:
+            continue
+        for ordinal, (old, new) in enumerate(zip(group_teams(before[group]), group_teams(raw))):
+            if old == new:
+                continue
+            start = 2 + ordinal * TEAM_SIZE
+            team = bytearray(result[group][start:start + TEAM_SIZE])
+            where = f"group {group} team {ordinal}"
+            a, b = team_fields(old), team_fields(new)
+            set_team_fields(team, {name: b[name] for name in TEAM_FIELDS if a[name] != b[name]}, where)
+            for slot in range(16):
+                pa = player_fields(old[PLAYERS + slot * PLAYER_SIZE:PLAYERS + (slot + 1) * PLAYER_SIZE])
+                pb = player_fields(new[PLAYERS + slot * PLAYER_SIZE:PLAYERS + (slot + 1) * PLAYER_SIZE])
+                fields = {name: pb[name] for name in PLAYER_FIELDS if pa[name] != pb[name]}
+                if "rating" in fields and pb["rating"] is None:
+                    del fields["rating"]
+                if fields:
+                    set_player_fields(team, slot, fields, f"{where} slot {slot}")
+            result[group][start:start + TEAM_SIZE] = team
+    return {group: bytes(raw) for group, raw in result.items()}
 
 
 def import_cups_csv(text: str, groups: dict[int, bytes], file: str = "cups.csv") -> dict[int, list[tuple[int, int]]]:
@@ -1317,9 +1449,10 @@ def import_cups_csv(text: str, groups: dict[int, bytes], file: str = "cups.csv")
     places: dict[int, dict[int, tuple[int, int]]] = {}
     codes = {name: code for code, name in CUP_NAMES.items()}
     for row, cells in _records(file, text, CUP_COLUMNS, ("cup", "place", "group", "ordinal")):
-        if cells["cup"] not in codes:
+        cup = cells["cup"].strip().upper()
+        if cup not in codes:
             raise CsvError(file, row, "cup", f"{cells['cup']!r} is not one of {' '.join(codes)}")
-        code = codes[cells["cup"]]
+        code = codes[cup]
         place = _int_cell(file, row, "place", cells["place"], 1, CUP_SIZES[code])
         group = _int_cell(file, row, "group", cells["group"], 0, 255)
         if group not in CLUB_GROUPS:
@@ -1400,9 +1533,12 @@ def apply(pack: dict, originals: dict[int, bytes],
     label = pack.get("label", "")
     check_label(label)
     groups = {g: bytearray(raw) for g, raw in originals.items()}
-    for item in pack.get("teams", []):
+    teams = pack.get("teams", [])
+    if not isinstance(teams, list) or not all(isinstance(item, dict) for item in teams):
+        raise ValueError("teams: a list of teams with group and ordinal is expected")
+    for item in teams:
         group, ordinal = item.get("group"), item.get("ordinal")
-        if group not in SUPPORTED_GROUPS:
+        if type(group) is not int or group not in SUPPORTED_GROUPS:
             raise ValueError(f"group {group!r} is not a database group")
         count = struct.unpack_from(">H", groups[group], 0)[0]
         if type(ordinal) is not int or not 0 <= ordinal < count:
@@ -1410,11 +1546,16 @@ def apply(pack: dict, originals: dict[int, bytes],
         start = 2 + ordinal * TEAM_SIZE
         team = bytearray(groups[group][start:start + TEAM_SIZE])
         where = f"group {group} team {ordinal}"
-        set_team_fields(team, item.get("fields", {}), where)
-        for player in item.get("players", []):
-            slot = player.get("slot")
+        fields, players = item.get("fields", {}), item.get("players", [])
+        if not isinstance(fields, dict) or not isinstance(players, list):
+            raise ValueError(f"{where}: fields is an object and players a list")
+        set_team_fields(team, fields, where)
+        for player in players:
+            slot = player.get("slot") if isinstance(player, dict) else None
             if type(slot) is not int or not 0 <= slot < 16:
                 raise ValueError(f"{where}: no player slot {slot!r}")
+            if not isinstance(player.get("fields", {}), dict):
+                raise ValueError(f"{where} slot {slot}: fields is an object")
             set_player_fields(team, slot, player.get("fields", {}), f"{where} slot {slot}")
         groups[group][start:start + TEAM_SIZE] = team
     result = {g: bytes(raw) for g, raw in groups.items()}
@@ -1468,40 +1609,93 @@ def _base(args) -> Base:
     return base_from_disks(args.disk1.read_bytes(), args.disk2.read_bytes())
 
 
+def document_problem(exc: Exception) -> str:
+    """The reason a JSON document is not what its codec expects."""
+    if isinstance(exc, KeyError):
+        return f"{exc.args[0]!r} is missing"
+    if isinstance(exc, ValueError):
+        return str(exc)
+    return f"not the layout export writes ({exc})"
+
+
+DOCUMENT_ERRORS = (ValueError, KeyError, TypeError, AttributeError, IndexError, struct.error)
+
+
+def read_pack(path: Path, base: Base, current: dict[int, bytes] | None = None,
+              ) -> tuple[dict[int, bytes], dict[int, list[tuple[int, int]]], str]:
+    """(groups, participant lists, label) of the season pack in path: the
+    whole state the pack describes, so every group and cup it does not
+    name is the 96/97 one. A refusal names the file."""
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise ValueError(f"{path.name}: not readable JSON ({exc})") from None
+    try:
+        groups, label = apply(document, base.groups, current)
+        return groups, {**base.lists, **pack_cups(document, groups)}, label
+    except DOCUMENT_ERRORS as exc:
+        raise ValueError(f"{path.name}: {document_problem(exc)}") from None
+
+
 def read_sources(paths: list[Path], base: Base, labels: list[str], groups: dict[int, bytes],
                  lists: dict[int, list[tuple[int, int]]]) -> tuple[dict[int, bytes], dict, str | None]:
-    """The groups and participant lists after applying the sources in
-    order to groups and lists: a season pack (its label is returned),
-    players.csv, teams.csv and cups.csv, or group JSON files of export
-    (TEAM.ggg.json)."""
+    """The groups and participant lists after applying the sources to
+    groups and lists: season packs and group JSON files of export
+    (TEAM.ggg.json) in the order given, then every teams.csv, every
+    players.csv and every cups.csv (files whose names end so, each kind in
+    the order given). A pack replaces the whole state and its label is
+    returned. A refusal names the file.
+
+    An export holds the teams twice, as group JSON files and as CSV.
+    Given both, the CSV files count by what they change in the groups
+    given (or in the pack before them): those changes go on top of the
+    JSON files, so CSV files left as export wrote them never take an
+    edit of the JSON files back."""
     label = None
-    players = teams = cups = None
+    start = groups
+    views = False
+    tables: list[tuple[str, str, str]] = []
+    cups: list[Path] = []
     for path in paths:
         name = path.name.lower()
+        if name.startswith("customs-") and name.endswith(".csv"):
+            raise ValueError(f"{path.name}: the custom teams are not part of the database; "
+                             "patch.py import takes this file")
         if name.endswith("teams.csv"):
-            teams = path.read_text()
+            tables.append(("teams", path.name, csv_text(path.read_bytes())))
         elif name.endswith("players.csv"):
-            players = path.read_text()
+            tables.append(("players", path.name, csv_text(path.read_bytes())))
         elif name.endswith("cups.csv"):
-            cups = path
+            cups.append(path)
         elif name.endswith(".json"):
-            document = json.loads(path.read_text())
+            try:
+                document = json.loads(path.read_text(encoding="utf-8"))
+            except ValueError as exc:
+                raise ValueError(f"{path.name}: not readable JSON ({exc})") from None
             if isinstance(document, dict) and document.get("format") == PACK_FORMAT:
-                groups, label = apply(document, base.groups, groups)
-                lists = {**lists, **pack_cups(document, groups)}
-            else:
+                groups, lists, label = read_pack(path, base, groups)
+                start, views = groups, False
+                continue
+            try:
                 raw = team_data.encode(document)
-                group = raw[2] if len(raw) > 2 else -1
-                if group not in SUPPORTED_GROUPS or any(raw[2 + i * TEAM_SIZE] != group
-                                                        for i in range(len(raw) // TEAM_SIZE)):
-                    raise ValueError(f"{path.name}: not a database group")
-                groups = {**groups, group: raw}
+            except DOCUMENT_ERRORS as exc:
+                raise ValueError(f"{path.name}: {document_problem(exc)}") from None
+            group = raw[2] if len(raw) > 2 else -1
+            if group not in SUPPORTED_GROUPS or any(raw[2 + i * TEAM_SIZE] != group
+                                                    for i in range(len(raw) // TEAM_SIZE)):
+                raise ValueError(f"{path.name}: not a database group")
+            groups = {**groups, group: raw}
+            views = True
         else:
-            raise ValueError(f"{path.name}: expected a pack, players.csv, teams.csv, cups.csv or TEAM.ggg.json")
-    if players is not None or teams is not None:
-        groups = import_csv(groups, base.groups, labels, players, teams)
-    if cups is not None:
-        lists = {**lists, **import_cups_csv(cups.read_text(), groups, cups.name)}
+            raise ValueError(f"{path.name}: expected a season pack, a file named ...players.csv, ...teams.csv "
+                             "or ...cups.csv, or TEAM.ggg.json")
+    if tables:
+        if views:
+            groups = carry_changes(start, import_csv_files(start, base.groups, labels, tables), groups)
+        else:
+            groups = import_csv_files(groups, base.groups, labels, tables)
+    for path in cups:
+        lists = {**lists, **import_cups_csv(csv_text(path.read_bytes()), groups, path.name)}
     return groups, lists, label
 
 
@@ -1577,7 +1771,7 @@ def main() -> None:
                 if problems:
                     parser.exit(1, "\n".join(problems) + "\n")
             print(f"the editor accepts this set: label {manifest.label!r}, generation "
-                  f"{manifest.generation}, {len(manifest.entries)} files, CRC-32 {manifest_crc(raw):08X}, "
+                  f"{manifest.generation}, {len(manifest.entries)} files, fingerprint {data_fingerprint(raw):08X}, "
                   f"USE EDITED DATABASE {'on' if read_switch(args.data) else 'off'}")
         elif args.command == "export":
             base = _base(args)
@@ -1604,7 +1798,8 @@ def main() -> None:
                 state = "on" if read_switch(args.data) else "off"
                 written = read_set(args.data)[1]
                 print(("unchanged" if manifest is None else f"wrote generation {manifest.generation}")
-                      + (f", CRC-32 {manifest_crc(written):08X}" if written else "") + f", USE EDITED DATABASE {state}")
+                      + (f", fingerprint {data_fingerprint(written):08X}" if written else "")
+                      + f", USE EDITED DATABASE {state}")
             else:
                 manifest = write_set(args.data, base.groups, groups, label, base=base, lists=lists)
                 print("unchanged" if manifest is None else f"wrote generation {manifest.generation}")
@@ -1617,9 +1812,8 @@ def main() -> None:
                                                    lists=cup_lists_of(copies, base), base=base)))
         elif args.command == "apply":
             base = _base(args)
-            pack = json.loads(args.pack.read_text())
-            groups, label = apply(pack, base.groups)
-            manifest = write_set(args.data, base.groups, groups, label, base=base, lists=pack_cups(pack, groups))
+            groups, lists, label = read_pack(args.pack, base)
+            manifest = write_set(args.data, base.groups, groups, label, base=base, lists=lists)
             print("unchanged" if manifest is None else f"wrote generation {manifest.generation}")
     except (ValueError, KeyError, OSError, struct.error) as exc:
         parser.exit(1, f"database_set: {exc}\n")

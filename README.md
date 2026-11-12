@@ -110,7 +110,7 @@ The [user manual](docs/manual.md) describes it all. In short:
 | `install` | A new install, optionally with an edited database in use |
 | `list` | What an install's save directory holds, with every fingerprint |
 | `check` | Checks files as the game and the editors do |
-| `export`, `import` | The custom set, tactics and definitions as JSON and CSV |
+| `export`, `import` | The custom set, tactics and definitions as JSON and CSV; `import` takes an export directory as it is |
 | `db export`, `db import`, `db diff`, `db apply`, `db check`, `db switch` | The database as JSON and CSV, season packs of changed fields |
 | `report` | Standings, cup results and scorers of competition saves |
 | `results` | The match logs of several machines as one table |

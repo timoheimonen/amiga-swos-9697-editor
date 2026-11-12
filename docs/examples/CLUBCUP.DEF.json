@@ -2,8 +2,8 @@
  "schema": "swos-amiga-definition-v1",
  "database": {
   "kind": "edited",
-  "generation": 1,
-  "crc32": "5F75AF19",
+  "generation": 0,
+  "crc32": "D3923E46",
   "label": "SEASON 26/27"
  },
  "custom_set_crc32": null,

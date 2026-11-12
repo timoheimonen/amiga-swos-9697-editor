@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.93b
+; SWOS 96-97 In-Game Editors V0.94b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -837,15 +837,56 @@ db_caption_update:
         rts
 
 ; db_label_crc: A0 = manifest. Its label as db_label_text, a space and its
-; CRC-32 at A1; A1 is left on the NUL. Preserves all other registers.
+; fingerprint (db_data_crc) at A1; A1 is left on the NUL. Preserves all
+; other registers.
         xdef    db_label_crc
 db_label_crc:
         bsr.s   db_label_text
         move.b  #' ',(a1)+
         move.l  d0,-(sp)
-        move.l  MF_CRC32(a0),d0
+        bsr.s   db_data_crc
         bsr.l   text_hex32
         move.l  (sp)+,d0
+        rts
+
+; db_data_crc: A0 = manifest. D0.l = the set's fingerprint: the CRC-32 of
+; its label and of its entries with every generation taken as zero. Two
+; sets with the same label and the same files show the same fingerprint,
+; however many versions each install saved before; the manifest's own
+; CRC-32 (MF_CRC32) covers the generations and stays the check of the file
+; and of a link. Needs no A5; preserves all other registers.
+        xdef    db_data_crc
+db_data_crc:
+        movem.l d1-d3/a0-a2/a5,-(sp)
+        movea.l editor_base,a5
+        movea.l a0,a2
+        lea     WORK_CRC_TABLE(a5),a1
+        moveq   #-1,d0
+        lea     MF_LABEL(a2),a0
+        moveq   #SET_LABEL_SIZE,d1
+        bsr.l   crc32_table_update
+        move.w  MF_COUNT(a2),d3
+        cmpi.w  #MANIFEST_ENTRIES,d3
+        bls.s   .count
+        moveq   #MANIFEST_ENTRIES,d3
+.count:
+        lea     MANIFEST_HEADER(a2),a2
+        bra.s   .next
+.entry:
+        movea.l a2,a0                   ; the group
+        moveq   #ME_GENERATION,d1
+        bsr.l   crc32_table_update
+        lea     zero_long(pc),a0        ; the generation as zero
+        moveq   #ME_TEAMS-ME_GENERATION,d1
+        bsr.l   crc32_table_update
+        lea     ME_TEAMS(a2),a0         ; records, length and CRC-32 of the file
+        moveq   #MANIFEST_ENTRY-ME_TEAMS,d1
+        bsr.l   crc32_table_update
+        lea     MANIFEST_ENTRY(a2),a2
+.next:
+        dbf     d3,.entry
+        not.l   d0
+        movem.l (sp)+,d1-d3/a0-a2/a5
         rts
 
 ; db_label_text: A0 = manifest. Its label at A1, or EDITED when it has
@@ -897,18 +938,43 @@ db_identity:
         rts
 
 ; db_identity_of: A0 = the manifest of an edited set, A1 = an identity
-; (definition.i). Its kind, generation, manifest CRC-32 and label for that
-; set. Changes D0.
+; (definition.i). Its kind, a zero generation, the set's fingerprint and
+; its label. Changes D0.
         xdef    db_identity_of
 db_identity_of:
         move.w  #DIK_EDITED,DI_KIND(a1)
-        move.w  MF_GENERATION+2(a0),DI_GENERATION(a1)
-        move.l  MF_CRC32(a0),DI_MANIFEST_CRC(a1)
+        clr.w   DI_GENERATION(a1)
+        bsr.w   db_data_crc
+        move.l  d0,DI_SET_CRC(a1)
         moveq   #DI_LABEL_SIZE-1,d0
 .label:
         move.b  MF_LABEL(a0,d0.w),DI_LABEL(a1,d0.w)
         dbf     d0,.label
         rts
+
+; db_identity_old: A2 = the identity of a definition. Z set when it is one
+; V0.93b or earlier wrote for the set in use: an edited set by its manifest
+; generation and manifest CRC-32. Needs no A5; preserves all registers.
+        xdef    db_identity_old
+db_identity_old:
+        movem.l d0/a0/a5,-(sp)
+        movea.l editor_base,a5
+        cmpi.w  #DIK_EDITED,DI_KIND(a2)
+        bne.s   .done
+        tst.w   WORK_DB+DB_SWITCH(a5)
+        beq.s   .no
+        lea     WORK_DB+DB_ACTIVE(a5),a0
+        move.w  MF_GENERATION+2(a0),d0  ; 1 or more: never the zero of a fingerprint
+        cmp.w   DI_GENERATION(a2),d0
+        bne.s   .done
+        move.l  MF_CRC32(a0),d0
+        cmp.l   DI_SET_CRC(a2),d0
+.done:
+        movem.l (sp)+,d0/a0/a5
+        rts
+.no:
+        moveq   #1,d0
+        bra.s   .done
 
 ; ===========================================================================
 ; The working group

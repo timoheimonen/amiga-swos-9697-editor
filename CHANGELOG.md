@@ -1,5 +1,33 @@
 # Changelog
 
+## V0.94b 12-11-2026
+
+The same fingerprint for the same database, and easier exchange of data.
+
+- The fingerprint of the edited database no longer depends on how often a
+  set was saved: it covers the label and the set's files. Every install
+  that applies the same season pack shows the same code in the main menu,
+  in `patch.py list` and in the match log, and a definition made on one of
+  them loads on the others without a question. The code of a set differs
+  from the one V0.93b showed, so every machine of a tournament needs the
+  same version of the editors. Definitions saved by earlier versions load
+  as before.
+- CSV files go in as a spreadsheet saves them: commas, semicolons or tabs,
+  with or without a byte order mark, empty rows skipped, new names in small
+  letters stored in capitals. `export` and `db export` take `--semicolon`.
+  Several players or teams files go in with one command.
+- `export` always writes the custom teams, and `import` takes the directory
+  `export` or `db export` wrote as it is, on the same install or another;
+  it also takes season packs and the database's CSV files.
+- A season pack makes the database exactly the pack's: the groups and cups
+  that become the original ones again are listed. `db diff` prints the
+  fingerprint every install of the pack shows and says when the install it
+  read differs from it, and the commands say when USE EDITED DATABASE is
+  off. A dry run shows every changed field with its old and new value.
+- Fixed: of two players files in one `db import` only the last was used; a
+  pack without cups kept the cup participants an install had changed;
+  malformed JSON files ended in a Python traceback.
+
 ## V0.93b 10-11-2026
 
 Easier editing.
