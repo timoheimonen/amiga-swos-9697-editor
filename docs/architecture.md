@@ -202,7 +202,7 @@ section of `patch.py`. No byte of the game enters the built files.
 | `NAME.TAC` | A tactic: the game's 370-byte record |
 | `TACTICS.CFG` | The kept user tactics: header `SWOSTAC1`, version, a mask of the kept slots USER A-F, six 370-byte records, CRC-32 |
 | `NAME.DEF` | A tournament definition: header `SWOSDEF1`, version, length, CRC-32; the database it was made with, the rules, the teams, the user tactics |
-| `DBASE.CFG`, `DBASE.BAK` | The edited set's manifest (`SWOSGRP1`): label, generation, the files of the set with length and CRC-32; the fingerprint is its CRC-32 |
+| `DBASE.CFG`, `DBASE.BAK` | The edited set's manifest (`SWOSGRP1`): label, generation, the files of the set with length and CRC-32; the set's fingerprint is the CRC-32 of the label and of the entries without their generation numbers |
 | `Tgggnnnn.GRP` | Generation `nnnn` of database group `ggg` (the game's group format), or of the cups' copies and the transfer pool (100-103) |
 | `DBASE.USE` | The remembered state of USE EDITED DATABASE |
 | `NAME.DLD`, `.DLP`, `.DLS`, `.DLC` | The link of a `.DIY`, `.PRE`, `.SEA`, `.CAR` save to its set: the save's length and CRC-32 and a copy of the manifest |

@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.93b
+; SWOS 96-97 In-Game Editors V0.94b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -1147,7 +1147,7 @@ body_commands:
         dc.b    '* IN THE SET  + CHANGED',0
         even
         dc.w    UI_TEXT,ROW_X,CREDIT_Y,ROW_W*2+8,UI_DIM,UI_CENTER
-        dc.b    'V0.93b by Timo Heimonen (timo.heimonen@proton.me)',0
+        dc.b    'V0.94b by Timo Heimonen (timo.heimonen@proton.me)',0
         even
         dc.w    UI_END
 

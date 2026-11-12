@@ -7,9 +7,13 @@ directory `data/` are listed in the
 [architecture](architecture.md#files-the-editors-write); this document
 describes only the files users exchange.
 
-- **CSV** files are Latin-1 text with a header row, comma-separated in the
-  style of Python's `csv` module, one line per row. The names the editors
-  accept are ASCII.
+- **CSV** files are written as Latin-1 text with a header row,
+  comma-separated in the style of Python's `csv` module, one line per row
+  (`--semicolon` on `export` and `db export` separates with semicolons for
+  spreadsheets that expect them). The names the editors accept are ASCII.
+  They are read as UTF-8, with or without a byte order mark, or else as
+  Latin-1, separated by commas, semicolons or tabs: whichever the header row
+  has most of.
 - **JSON** files are written with a fixed key order, one-space indentation
   and ASCII only.
 - Hexadecimal values (CRC-32 values, raw bytes) are written as text; a
@@ -42,9 +46,10 @@ USER A-F.
 `patch.py db export INSTALL DIR` writes `players.csv`, `teams.csv` and
 `cups.csv` of the install's database: the groups of its edited set, the
 original for every group the set does not declare. `patch.py export INSTALL
-DIR` writes `customs-players.csv` and `customs-teams.csv` of the custom set,
-when the install has a `CUSTOMS.EDT`, with the columns of `players.csv` and
-`teams.csv` and group 72. Rows are sorted by group, ordinal and slot.
+DIR` writes `customs-players.csv` and `customs-teams.csv` of the custom set
+(the game's own custom teams while the install has no `CUSTOMS.EDT`), with
+the columns of `players.csv` and `teams.csv` and group 72. Rows are sorted
+by group, ordinal and slot.
 
 ### `players.csv`, `customs-players.csv`
 
@@ -116,12 +121,19 @@ install's `CUSTOMS.EDT`, else to the game's own custom teams) and saves
   not have, and a row it does not have, keep the data as it is.
 - The informative columns (`team`, the strength columns) are ignored.
 - The header may not name an unknown column or a column twice; every row
-  must have as many cells as the header; empty lines are skipped.
+  must have as many cells as the header; rows without any value are
+  skipped, and so are empty cells after the last column.
+- Several files of a kind may be given (every file whose name ends in
+  `players.csv`, and so on): all teams files are applied, then all players
+  files, each kind in the order given.
 - Numbers are decimal within the ranges of the tables above; the group must
   be one the file can change (a database group, 72 in the custom set's
   files), the ordinal a team of that group.
 - A changed text is written NUL-terminated and zero-padded and may use
-  `A-Z 0-9 space - / . ' ( )`; an unchanged text keeps its field as it is.
+  `A-Z 0-9 space - / . ' ( )`; it is taken without the spaces around it
+  and in capitals, so it may be typed in small letters. An unchanged text
+  keeps its field as it is. Nationality labels, positions and cup names
+  may be in small letters too; the spaces around a number are ignored.
 - A goalkeeper needs a rating 0-40 (see the checks below); an outfield
   player's `rating` must be empty, and his rating is computed from his
   skills, also when his position changes.
@@ -167,9 +179,18 @@ A season pack holds the fields in which an edited database differs from the
 game's original groups, so that every machine of a tournament group makes
 the same set from its own disks. `patch.py db diff INSTALL PACK.json`
 writes it (a new file; `--label` names the set, else the set's own label),
-and `patch.py db apply INSTALL PACK.json`, `db import` and
-`install --set` apply it. Two installs that apply the same pack show the
-same fingerprint. Abbreviated example (a cup lists all its clubs):
+and `patch.py db apply INSTALL PACK.json`, `db import`, `import` and
+`install --set` apply it. A pack is the whole state: a group or a cup it
+does not name is the original one again, also on an install whose set
+changed it. Every install that applies the same pack shows the same
+fingerprint, which `db diff` prints. The fingerprint is the CRC-32 of the
+set's label field (16 bytes) and of the manifest's entries, each with its
+generation number taken as zero: it covers the label and, through the
+length and CRC-32 of each entry, the files of the set, and not how many
+generations an install wrote before. A file edited in the game can differ
+from the pack's in bytes a pack does not carry (the bytes after the end of
+a name typed over a longer one); applying the pack writes the pack's
+file. Abbreviated example (a cup lists all its clubs):
 
 ```json
 {
@@ -239,7 +260,7 @@ new directory `DIR`; `patch.py db export INSTALL DIR` writes the database:
 
 | Command | Path | Contents |
 |---|---|---|
-| `export` | `CUSTOMS.EDT.json` | The custom set, when the install has a `CUSTOMS.EDT` (with `customs-players.csv` and `customs-teams.csv`) |
+| `export` | `CUSTOMS.EDT.json` | The custom set, or the game's own custom teams while the install has no `CUSTOMS.EDT` (with `customs-players.csv` and `customs-teams.csv`) |
 | `export` | `tactics/NAME.TAC.json` | Each `.TAC` the editors accept |
 | `export` | `TACTICS.CFG.json` | The kept user tactics, when the install has a sound `TACTICS.CFG` |
 | `export` | `definitions/NAME.DEF.json` | Each `.DEF` the editors accept |
@@ -333,7 +354,7 @@ the database it was made with and optionally its teams and user tactics:
 | Key | Meaning |
 |---|---|
 | `schema` | `"swos-amiga-definition-v1"` |
-| `database` | `{"kind": "original"}`, or `{"kind": "edited", "generation": ..., "crc32": ..., "label": ...}`: the edited set's manifest generation, fingerprint and label |
+| `database` | `{"kind": "original"}`, or `{"kind": "edited", "generation": 0, "crc32": ..., "label": ...}`: the edited set's fingerprint and label. A definition saved by V0.93b or earlier holds the manifest's generation (1 or more) and the manifest's CRC-32 instead, and loads without a question while that manifest is the set in use |
 | `custom_set_crc32` | The CRC-32 of `CUSTOMS.EDT` as last loaded or saved, or `null` |
 | `family` | `"league"`, `"cup"` or `"tournament"` |
 | `name` | 0-24 characters of `A-Z 0-9 space - / .` |
@@ -384,13 +405,18 @@ a link or a manifest is for reading only"):
 - a link: `"format": "SWOSLNK1"`, `family` (1 DIY, 2 preset, 3 season, 4
   career), `save_suffix`, `save_length`, `save_crc32` and the `manifest`;
 - the manifest: `"format": "SWOSGRP1"`, `version`, `generation`, `label`,
-  `crc32` (the set's fingerprint) and `groups`, each with `group`, `kind`
+  `fingerprint` (the set's), `crc32` (the manifest file's own) and
+  `groups`, each with `group`, `kind`
   (`GROUP`, `EUROCUP`, `EUROCWC`, `UEFACUP` or `POOLPLYR`), `file`,
   `records`, `length` and `crc32`.
 
 ### How import chooses the target
 
-`patch.py import INSTALL FILES` decides by the file name, case ignored:
+`patch.py import INSTALL FILES` decides by the file name, case ignored. A
+directory stands for every file in it and in its subdirectories, so the
+directory `export` or `db export` wrote can be given as it is; its files
+for reading only and files of other kinds are then left out, and the label
+of its `database/DBASE.CFG.json` names the set.
 
 | File | Target |
 |---|---|
@@ -399,10 +425,17 @@ a link or a manifest is for reading only"):
 | `NAME.DEF.json` | The definition `NAME.DEF` (the name in upper case) |
 | `TACTICS.CFG.json`, `TACTICS.CFG` | The kept user tactics `TACTICS.CFG` |
 | `TEAM.ggg.json` | A database group, into a new generation of the edited set; the group is the one of the teams in the file |
-| `customs-players.csv`, `customs-teams.csv` | The custom set |
+| A file ending in `customs-players.csv` or `customs-teams.csv` | The custom set |
+| A file ending in `players.csv`, `teams.csv` or `cups.csv`; a season pack | The database, as `db import` takes them |
 | `NAME.TAC`, `NAME.DEF` | Copied as they are, after the checks |
 
-Any other file is refused. A target name has 1-29 characters with a dot; a
+Any other file given by name is refused, and so is an install directory
+(export it first). An export holds the teams twice, as JSON
+(`CUSTOMS.EDT.json`, `TEAM.ggg.json`) and as CSV. Given both, the JSON files
+are taken first, and the fields the CSV files change in the install's data
+are then put on top of them, so CSV files left as export wrote them never
+take an edit of the JSON files back; where both change the same field, the
+CSV counts. A target name has 1-29 characters with a dot; a
 `.TAC` needs a name of 1-8 characters before `.TAC`, the names the game lists.
 A target that exists with the same contents is reported unchanged; a `.TAC`,
 `.DEF` or `TACTICS.CFG` that exists with other contents is replaced only with `--replace`,
@@ -411,12 +444,14 @@ DEFINITION keeps it.
 The save directory holds at most 512 names, 45 of them game saves.
 
 `patch.py db import INSTALL FILES` takes files ending in `players.csv`,
-`teams.csv` and `cups.csv`, season packs and `TEAM.ggg.json` files; a
+`teams.csv` and `cups.csv`, season packs and `TEAM.ggg.json` files, or the
+directory `db export` wrote, which stands for the files in it; a
 `.json` file is a pack when its `format` is `SWOSPACK`, else a group,
 identified by its teams. Packs and groups are applied in the order given (a
 pack starts again from the original groups), then the players and teams
-files, then the cups file. The new set's label is `--label`, else a pack's,
-else the label the set has. `patch.py install --set FILES` takes the same
+files, then the cups files. The new set's label is `--label`, else a pack's,
+else the label the set has. The files of the custom set are refused here
+(`import` takes them). `patch.py install --set FILES` takes the same
 files for the database of a new install.
 
 ## Reports and results
@@ -467,7 +502,8 @@ the game was started: WHDLoad reads the clock once) or empty when the
 machine has no clock, `family` `friendly`, `diy`, `preset`,
 `season` or `career`; `extra_time` and `forfeit` are `yes` or empty;
 `penalties` (the shootout) and `aggregate` (a second leg) are `h-a`;
-`database` is `ORIGINAL` or the set's label and fingerprint;
+`database` is `ORIGINAL` or the set's label and fingerprint (matches logged
+by V0.93b or earlier hold the manifest's CRC-32 there);
 `custom_set_crc32` the custom set's CRC-32 when it is known.
 
 A record seen again with the same bytes is dropped as a duplicate; the same

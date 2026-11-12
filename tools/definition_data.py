@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SWOS 96-97 In-Game Editors V0.93b
+# SWOS 96-97 In-Game Editors V0.94b
 # Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 # Licensed under the MIT License. See the LICENSE file for details.
 """Tournament definitions (.DEF) on the host.
@@ -41,8 +41,8 @@ USER_SLOTS = 6
 
 # Body
 B_DB_KIND = 0x00            # word: 0 original database, 1 edited set
-B_DB_GENERATION = 0x02      # word: manifest generation (edited set)
-B_DB_CRC = 0x04             # long: manifest CRC-32 (edited set)
+B_DB_GENERATION = 0x02      # word: zero; V0.93b and earlier wrote the manifest generation (edited set)
+B_DB_CRC = 0x04             # long: the set's fingerprint; with a generation, the manifest CRC-32
 B_DB_LABEL = 0x08           # 16 bytes: set label, NUL padded (edited set)
 B_CUSTOM_CRC = 0x18         # long: CRC-32 of CUSTOMS.EDT as last read or written
 B_DB_FLAGS = 0x1C           # word: bit 0 = the custom set CRC is known

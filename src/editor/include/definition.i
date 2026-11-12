@@ -1,4 +1,4 @@
-; SWOS 96-97 In-Game Editors V0.93b
+; SWOS 96-97 In-Game Editors V0.94b
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -22,8 +22,10 @@ DEF_HEADER_SIZE         equ $10
 
 ; Body: database identity
 DI_KIND                 equ $00         ; word: DBK_*
-DI_GENERATION           equ $02         ; word: manifest generation
-DI_MANIFEST_CRC         equ $04         ; long: manifest CRC-32
+DI_GENERATION           equ $02         ; word: zero; V0.93b and earlier wrote the
+                                        ; manifest generation here
+DI_SET_CRC              equ $04         ; long: the set's fingerprint (db_data_crc);
+                                        ; with a generation, the manifest CRC-32
 DI_LABEL                equ $08         ; 16 bytes: set label, NUL padded
 DI_CUSTOM_CRC           equ $18         ; long: custom set CRC-32
 DI_FLAGS                equ $1C         ; word: DBF_*
